@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* reference tokens：只放原始色值 */
+:root {
+  --ref-neutral-0: #ffffff;
+  --ref-neutral-50: #f7f7f8;
+  --ref-neutral-100: #efeff1;
+  --ref-neutral-200: #e2e2e6;
+  --ref-neutral-500: #6b6b76;
+  --ref-neutral-900: #18181b;
+  --ref-orange-600: #e8501c;
+  --ref-orange-700: #c9420f;
+  --ref-red-600: #d93636;
+  --ref-red-50: #fdeeee;
+  --ref-green-600: #1f9d55;
+  --ref-amber-50: #fff7e6;
+  --ref-amber-700: #a15c00;
+  --ref-shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.18);
+  --ref-overlay: rgb(0 0 0 / 0.3);
+}
+
+/* semantic tokens：表达设计语义 */
+:root {
+  --background: var(--ref-neutral-50);
+  --foreground: var(--ref-neutral-900);
+  --card: var(--ref-neutral-0);
+  --card-foreground: var(--ref-neutral-900);
+  --muted: var(--ref-neutral-100);
+  --muted-foreground: var(--ref-neutral-500);
+  --border: var(--ref-neutral-200);
+  --primary: var(--ref-orange-600);
+  --primary-hover: var(--ref-orange-700);
+  --primary-foreground: var(--ref-neutral-0);
+  --destructive: var(--ref-red-600);
+  --destructive-muted: var(--ref-red-50);
+  --success: var(--ref-green-600);
+  --warning-muted: var(--ref-amber-50);
+  --warning-foreground: var(--ref-amber-700);
+  --shadow-dialog: var(--ref-shadow-dialog);
+  --overlay: var(--ref-overlay);
+}
+
+/* Tailwind 桥接 */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-success: var(--success);
+  --color-warning-muted: var(--warning-muted);
+  --color-warning-foreground: var(--warning-foreground);
+  --shadow-dialog: var(--shadow-dialog);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+    sans-serif;
+  font-size: 14px;
+}
+
+dialog::backdrop {
+  background: var(--overlay);
+}
