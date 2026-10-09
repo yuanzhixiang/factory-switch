@@ -1,6 +1,6 @@
 {
   "name": "factory-switch",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "在本机备份并切换 Factory 登录账号",
   "type": "module",
