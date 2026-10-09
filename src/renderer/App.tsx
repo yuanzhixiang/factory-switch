@@ -5,12 +5,16 @@ import { ApiKeySection } from "./components/apikey/ApiKeySection";
 import { AccountActions } from "./components/detail/AccountActions";
 import { AccountHeader } from "./components/detail/AccountHeader";
 import { SignedOutNotice } from "./components/detail/SignedOutNotice";
-import { AccountSidebar } from "./components/sidebar/AccountSidebar";
+import {
+  AccountSidebar,
+  OVERVIEW_ID,
+} from "./components/sidebar/AccountSidebar";
 import { UsageLimits } from "./components/usage/UsageLimits";
+import { UsageOverview } from "./components/usage/UsageOverview";
 import { buildAccountViews } from "./lib/accounts";
 import type { LogLine } from "./lib/log";
 
-/** 页面：左侧账号导航，右侧选中账号的身份、用量、API Key 和操作 */
+/** 页面：左侧账号导航，右侧是全部账号汇总，或选中账号的身份、用量、API Key 和操作 */
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [usage, setUsage] = useState<UsageMap>({});
@@ -71,19 +75,21 @@ export function App() {
   }
 
   const accounts = buildAccountViews(state);
+  const showOverview = selectedId === OVERVIEW_ID && accounts.length > 0;
   // 选中的账号不存在（被删了或还没选）时，默认看当前登录的账号
-  const selected =
-    accounts.find((account) => account.id === selectedId) ??
-    accounts.find((account) => account.isCurrent) ??
-    accounts[0] ??
-    null;
+  const selected = showOverview
+    ? null
+    : (accounts.find((account) => account.id === selectedId) ??
+      accounts.find((account) => account.isCurrent) ??
+      accounts[0] ??
+      null);
 
   return (
     <div className="flex h-screen">
       <AccountSidebar
         accounts={accounts}
         usage={usage}
-        selectedId={selected?.id ?? null}
+        selectedId={showOverview ? OVERVIEW_ID : (selected?.id ?? null)}
         factoryRunning={state.factoryRunning}
         onSelect={setSelectedId}
       />
@@ -92,7 +98,13 @@ export function App() {
           {state.current.kind !== "signed-in" && (
             <SignedOutNotice current={state.current} busy={busy} run={run} />
           )}
-          {selected ? (
+          {showOverview ? (
+            <UsageOverview
+              accounts={accounts}
+              usage={usage}
+              onSelect={setSelectedId}
+            />
+          ) : selected ? (
             <>
               <AccountHeader
                 key={`header-${selected.id}`}

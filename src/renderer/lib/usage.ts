@@ -1,4 +1,4 @@
-import type { UsagePool, UsageSnapshot, UsageWindow } from "../../shared/types";
+import type { UsageSnapshot, UsageWindow } from "../../shared/types";
 import { HIGH_USAGE_PERCENT } from "../../shared/usage";
 
 /** 周期已经结束时按 0% 展示，避免显示过期的高用量 */
@@ -19,12 +19,50 @@ export function usageLevel(percent: number): UsageLevel {
   return percent >= HIGH_USAGE_PERCENT ? "high" : "normal";
 }
 
-/** 三个周期里最高的使用率，侧边栏展示用 */
-export function highestPercent(pool: UsagePool, now: number): number {
-  return Math.max(
-    effectivePercent(pool.fiveHour, now),
-    effectivePercent(pool.weekly, now),
-    effectivePercent(pool.monthly, now),
+/** 多个账号同一周期的汇总 */
+export interface WindowSummary {
+  /** 参与汇总的账号数 */
+  accounts: number;
+  /** 各账号已用百分比之和，按「账号额度」为单位，如 1.6 表示用掉 1.6 个账号的额度 */
+  usedAccounts: number;
+  /** 总额度的使用率：已用之和 / 账号数 */
+  percent: number;
+  /** 最早一个重置的周期结束时间；都没开始计时为 null */
+  nextReset: number | null;
+}
+
+/** 把多个账号同一周期的用量直接相加；没有账号时返回 null */
+export function summarizeWindows(
+  windows: UsageWindow[],
+  now: number,
+): WindowSummary | null {
+  if (windows.length === 0) {
+    return null;
+  }
+  const used = windows.reduce(
+    (total, window) => total + effectivePercent(window, now),
+    0,
+  );
+  const resets = windows
+    .map((window) => window.windowEnd)
+    .filter((end): end is number => end !== null && end > now);
+  return {
+    accounts: windows.length,
+    usedAccounts: used / 100,
+    percent: Math.ceil(used / windows.length),
+    nextReset: resets.length > 0 ? Math.min(...resets) : null,
+  };
+}
+
+/** 有快照的账号某个池的月度汇总，侧边栏和汇总页共用 */
+export function summarizeMonthly(
+  snapshots: UsageSnapshot[],
+  pool: "standard" | "core",
+  now: number,
+): WindowSummary | null {
+  return summarizeWindows(
+    snapshots.map((snapshot) => snapshot[pool].monthly),
+    now,
   );
 }
 
@@ -45,6 +83,6 @@ export function formatReset(windowEnd: number | null, now: number): string {
 }
 
 /** 额外额度显示成美元 */
-export function formatDollars(snapshot: UsageSnapshot): string {
-  return `$${(snapshot.extraUsageCents / 100).toFixed(2)}`;
+export function formatDollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
 }
