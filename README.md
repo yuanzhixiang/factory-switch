@@ -2,12 +2,19 @@
 
 在本机备份并切换 Factory 桌面版（和命令行 `droid`）的登录账号，切换后左侧会话仍然可见。
 
+## 下载安装
+
+在 [GitHub Releases](https://github.com/yuanzhixiang/factory-switch/releases) 下载适用于 Apple Silicon（M 系列 Mac）的 DMG，将 `Factory Switch.app` 拖到 `Applications`。也提供 ZIP，解压后将应用移入 `Applications` 即可。
+
+应用未签名、未公证。首次打开如被 macOS 拦截，请在确认下载来源后到「系统设置 → 隐私与安全性」允许打开。发布附件中的 `SHA256SUMS.txt` 可用于校验文件完整性。
+
 ## 使用
 
 ```bash
 pnpm install
 pnpm start        # 开发运行
 pnpm dist         # 打包成 release/mac-arm64/Factory Switch.app
+pnpm dist:release # 打包 Apple Silicon 的 DMG 和 ZIP，不自动上传
 pnpm test         # 核心逻辑测试，只用临时目录，不碰真实 ~/.factory
 ```
 

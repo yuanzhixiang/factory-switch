@@ -1,6 +1,6 @@
 {
   "name": "factory-switch",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "在本机备份并切换 Factory 登录账号",
   "type": "module",
@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "dist": "pnpm build && electron-builder --mac --dir"
+    "dist": "pnpm build && electron-builder --mac --dir",
+    "dist:release": "pnpm build && electron-builder --mac dmg zip --arm64 --publish never"
   },
   "build": {
     "appId": "com.yuanzhixiang.factory-switch",
@@ -27,6 +28,7 @@
     ],
     "mac": {
       "target": "dir",
+      "artifactName": "Factory-Switch-${version}-${arch}.${ext}",
       "category": "public.app-category.developer-tools",
       "identity": null
     }
