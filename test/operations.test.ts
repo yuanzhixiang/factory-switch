@@ -61,6 +61,7 @@ describe("getState", () => {
         email: "alice@example.com",
         name: "Test user_alice",
       },
+      accountId: accountIdFor(ALICE),
       savedAccountId: null,
     });
     expect(JSON.stringify(state)).not.toContain("refresh-");

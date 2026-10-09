@@ -26,10 +26,10 @@ export function Modal({
         event.preventDefault();
         onClose();
       }}
-      className="m-auto w-[400px] rounded-lg border border-border bg-card p-0 text-card-foreground shadow-dialog"
+      className="m-auto w-[400px] rounded-[2px] border border-border bg-background p-0 text-foreground shadow-dialog"
     >
       <div className="flex flex-col gap-4 p-6">
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="text-sm">{title}</h2>
         {children}
       </div>
     </dialog>

@@ -16,6 +16,7 @@ import {
   createBackupDir,
   findAccount,
   listAccounts,
+  listApiKeyHints,
   markUsed,
   readSavedAuth,
   restoreAccountFiles,
@@ -65,6 +66,7 @@ export async function getState(env: Env): Promise<AppState> {
       current = {
         kind: "signed-in",
         identity: credentials.identity,
+        accountId: id,
         savedAccountId: accounts.some((account) => account.id === id)
           ? id
           : null,
@@ -75,7 +77,35 @@ export async function getState(env: Env): Promise<AppState> {
   } catch (error) {
     current = { kind: "unreadable", message: (error as Error).message };
   }
-  return { current, accounts, factoryRunning: await env.factory.isRunning() };
+  return {
+    current,
+    accounts,
+    apiKeyHints: await listApiKeyHints(env, accounts),
+    factoryRunning: await env.factory.isRunning(),
+  };
+}
+
+/** 读取当前登录账号的 access token 和账号 ID，用来查用量；没登录或读不出时返回 null */
+export async function readCurrentAccessToken(
+  env: Env,
+): Promise<{ accountId: string; accessToken: string } | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(path.join(env.factoryDir, AUTH_FILE), "utf8");
+  } catch {
+    return null;
+  }
+  const credentials = decryptCredentials(
+    content,
+    await env.readEncryptionKey(),
+  ) as { access_token?: unknown };
+  if (typeof credentials.access_token !== "string") {
+    return null;
+  }
+  return {
+    accountId: accountIdFor(identityFromCredentials(credentials)),
+    accessToken: credentials.access_token,
+  };
 }
 
 /** 备份当前登录的账号；已备份过的账号会覆盖更新，label 为空时沿用原名 */

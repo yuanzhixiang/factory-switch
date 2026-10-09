@@ -167,6 +167,55 @@ export async function renameAccount(
   await writeMeta(env, { ...account, label: trimmed });
 }
 
+// API Key 和凭证备份放在同一个账号目录，权限同样是 600
+const API_KEY_FILE = "api-key";
+
+/** 读取账号的 API Key；没设置时返回 null */
+export async function readApiKey(env: Env, id: string): Promise<string | null> {
+  try {
+    const key = await fs.readFile(
+      path.join(accountDir(env, id), API_KEY_FILE),
+      "utf8",
+    );
+    return key.trim() || null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** 保存账号的 API Key，调用方负责先校验 Key 可用 */
+export async function writeApiKey(
+  env: Env,
+  id: string,
+  apiKey: string,
+): Promise<void> {
+  await readMeta(env, id);
+  await writeFileAtomic(path.join(accountDir(env, id), API_KEY_FILE), apiKey);
+}
+
+/** 删除账号的 API Key */
+export async function deleteApiKey(env: Env, id: string): Promise<void> {
+  await fs.rm(path.join(accountDir(env, id), API_KEY_FILE), { force: true });
+}
+
+/** 所有已设置 API Key 的账号及 Key 末四位，给界面展示用 */
+export async function listApiKeyHints(
+  env: Env,
+  accounts: SavedAccount[],
+): Promise<Record<string, string>> {
+  const hints: Record<string, string> = {};
+  for (const account of accounts) {
+    const key = await readApiKey(env, account.id);
+    if (key) {
+      hints[account.id] = key.slice(-4);
+    }
+  }
+  return hints;
+}
+
 /** 删除备份账号：整个目录移进备份区而不是直接删，误删还能找回 */
 export async function removeAccount(env: Env, id: string): Promise<void> {
   const backupDir = await createBackupDir(env, "remove-account");

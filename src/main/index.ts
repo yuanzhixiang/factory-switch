@@ -1,5 +1,5 @@
 import path from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Notification } from "electron";
 import { createDefaultEnv } from "../core/env";
 import {
   backupCurrent,
@@ -8,8 +8,10 @@ import {
   SwitchError,
   switchTo,
 } from "../core/operations";
-import { removeAccount, renameAccount } from "../core/vault";
+import { setApiKey } from "../core/usage";
+import { deleteApiKey, removeAccount, renameAccount } from "../core/vault";
 import type { OperationResult } from "../shared/types";
+import { createUsageMonitor } from "./usage-monitor";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -21,7 +23,22 @@ const env = createDefaultEnv((message) => {
 // 同一时间只允许一个会改文件的操作，避免连点两次切换互相覆盖
 let busy = false;
 
-/** 串行执行一个操作，统一转成界面能展示的结果 */
+const monitor = createUsageMonitor({
+  env,
+  isBusy: () => busy,
+  onUsage: (usage) => mainWindow?.webContents.send("usage", usage),
+  onAlert: (alert) => {
+    const notification = new Notification({
+      title: alert.title,
+      body: alert.body,
+    });
+    // 点通知打开窗口并选中对应账号
+    notification.on("click", () => showAndSelect(alert.accountId));
+    notification.show();
+  },
+});
+
+/** 串行执行一个操作，统一转成界面能展示的结果；成功后顺手刷新用量 */
 async function runOperation(
   action: () => Promise<string>,
 ): Promise<OperationResult> {
@@ -46,6 +63,7 @@ async function runOperation(
     return { ok: false, message, state: await getState(env) };
   } finally {
     busy = false;
+    void monitor.refresh();
   }
 }
 
@@ -73,16 +91,27 @@ function registerIpc(): void {
       return "已删除这个备份（文件已移到 ~/.factory-switch/backups）";
     }),
   );
+  ipcMain.handle("set-api-key", (_event, accountId: string, apiKey: string) =>
+    runOperation(() => setApiKey(env, accountId, apiKey)),
+  );
+  ipcMain.handle("clear-api-key", (_event, accountId: string) =>
+    runOperation(async () => {
+      await deleteApiKey(env, accountId);
+      return "API Key 已删除";
+    }),
+  );
+  ipcMain.handle("get-usage", () => monitor.get());
+  ipcMain.handle("refresh-usage", () => monitor.refresh());
 }
 
 /** 创建主窗口；开发时加载 Vite dev server，打包后加载构建产物 */
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 860,
-    height: 640,
-    minWidth: 720,
-    minHeight: 520,
-    title: "Factory 账号切换",
+function createWindow(): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1000,
+    height: 680,
+    minWidth: 820,
+    minHeight: 560,
+    title: "Factory Switch",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -92,18 +121,35 @@ function createWindow(): void {
   });
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
-    void mainWindow.loadURL(devServerUrl);
+    void window.loadURL(devServerUrl);
   } else {
-    void mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    void window.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
-  mainWindow.on("closed", () => {
+  window.on("closed", () => {
     mainWindow = null;
+  });
+  mainWindow = window;
+  return window;
+}
+
+/** 显示窗口并让页面选中某个账号；窗口已关时先重新打开 */
+function showAndSelect(accountId: string): void {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send("select-account", accountId);
+    return;
+  }
+  const window = createWindow();
+  window.webContents.once("did-finish-load", () => {
+    window.webContents.send("select-account", accountId);
   });
 }
 
 void app.whenReady().then(() => {
   registerIpc();
   createWindow();
+  monitor.start();
   // macOS 点 Dock 图标时窗口已关就重新开一个
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -112,7 +158,5 @@ void app.whenReady().then(() => {
   });
 });
 
-// 只有一个窗口的小工具，关窗口就退出
-app.on("window-all-closed", () => {
-  app.quit();
-});
+// 关掉窗口后继续在后台查用量和发通知，Cmd+Q 才真正退出
+app.on("window-all-closed", () => {});

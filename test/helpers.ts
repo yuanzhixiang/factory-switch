@@ -21,6 +21,10 @@ export interface TestEnv extends Env {
   key: Buffer;
   reports: string[];
   root: string;
+  /** 每次查用量带的 Bearer，按顺序记录 */
+  bearers: string[];
+  /** 按 Bearer 决定假接口的返回 */
+  respond: (bearer: string) => { status: number; body: unknown };
 }
 
 /** 造一个 access_token：只有 payload 有意义 */
@@ -102,16 +106,47 @@ export async function createTestEnv(): Promise<TestEnv> {
     },
   };
   const reports: string[] = [];
-  return {
+  const env: TestEnv = {
     root,
     key,
     reports,
+    bearers: [],
+    respond: () => ({ status: 500, body: {} }),
     factoryDir,
     vaultDir: path.join(root, ".factory-switch"),
     readEncryptionKey: async () => key,
     factory,
+    httpFetch: async (_input, init) => {
+      const auth = new Headers(init?.headers).get("authorization") ?? "";
+      const bearer = auth.replace(/^Bearer /, "");
+      env.bearers.push(bearer);
+      const { status, body } = env.respond(bearer);
+      return new Response(JSON.stringify(body), { status });
+    },
     now: () => (clock += 1_000),
     report: (message) => reports.push(message),
+  };
+  return env;
+}
+
+/** 造一份 /api/billing/limits 的响应 */
+export function limitsBody(fiveHour: number, windowEnd: string | null = null) {
+  const window = (usedPercent: number) => ({
+    usedPercent,
+    windowEnd,
+    secondsRemaining: null,
+  });
+  return {
+    limits: {
+      standard: {
+        fiveHour: window(fiveHour),
+        weekly: window(10),
+        monthly: window(5),
+      },
+      core: { fiveHour: window(0), weekly: window(0), monthly: window(0) },
+    },
+    overagePreference: "droidCore",
+    extraUsageBalanceCents: 250,
   };
 }
 

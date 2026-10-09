@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppState, OperationResult } from "../shared/types";
-import { AccountList } from "./components/accounts/AccountList";
+import type { AppState, OperationResult, UsageMap } from "../shared/types";
 import { ActivityLog } from "./components/activity/ActivityLog";
-import { CurrentAccountCard } from "./components/current/CurrentAccountCard";
+import { ApiKeySection } from "./components/apikey/ApiKeySection";
+import { AccountActions } from "./components/detail/AccountActions";
+import { AccountHeader } from "./components/detail/AccountHeader";
+import { SignedOutNotice } from "./components/detail/SignedOutNotice";
+import { AccountSidebar } from "./components/sidebar/AccountSidebar";
+import { UsageLimits } from "./components/usage/UsageLimits";
+import { buildAccountViews } from "./lib/accounts";
 import type { LogLine } from "./lib/log";
 
-/** 页面：编排当前账号卡片、账号列表和状态区 */
+/** 页面：左侧账号导航，右侧选中账号的身份、用量、API Key 和操作 */
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
+  const [usage, setUsage] = useState<UsageMap>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [lines, setLines] = useState<LogLine[]>([]);
   const nextId = useRef(0);
@@ -16,11 +23,17 @@ export function App() {
     setLines((previous) => [...previous, { id: nextId.current++, text, tone }]);
   }, []);
 
-  // 主进程推来的进度逐行显示
-  useEffect(
-    () => window.factorySwitch.onProgress((message) => log(message)),
-    [log],
-  );
+  // 订阅主进程推送：操作进度、30 秒一次的用量、点击通知要选中的账号
+  useEffect(() => {
+    const api = window.factorySwitch;
+    const unsubscribes = [
+      api.onProgress((message) => log(message)),
+      api.onUsage(setUsage),
+      api.onSelectAccount(setSelectedId),
+    ];
+    void api.getUsage().then(setUsage);
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [log]);
 
   // 首次打开和每次窗口回到前台都刷新：用户可能刚在 Factory 里登录了新账号
   useEffect(() => {
@@ -32,49 +45,93 @@ export function App() {
     return () => window.removeEventListener("focus", refresh);
   }, []);
 
-  /** 执行一个会改动数据的操作，期间锁住所有按钮 */
+  /** 执行一个会改动数据的操作，期间锁住所有按钮；返回操作结果供弹窗决定是否关闭 */
   const run = useCallback(
-    (operation: () => Promise<OperationResult>) => {
+    (
+      operation: () => Promise<OperationResult>,
+    ): Promise<OperationResult | null> => {
       setBusy(true);
-      void operation()
+      return operation()
         .then((result) => {
           setState(result.state);
           log(result.message, result.ok ? "success" : "error");
+          return result;
         })
-        .catch((error: unknown) => log(`出错了：${String(error)}`, "error"))
+        .catch((error: unknown) => {
+          log(`出错了：${String(error)}`, "error");
+          return null;
+        })
         .finally(() => setBusy(false));
     },
     [log],
   );
 
   if (!state) {
-    return <p className="p-8 text-muted-foreground">正在读取…</p>;
+    return <p className="p-10 text-muted-foreground">正在读取…</p>;
   }
 
-  const currentAccountId =
-    state.current.kind === "signed-in" ? state.current.savedAccountId : null;
+  const accounts = buildAccountViews(state);
+  // 选中的账号不存在（被删了或还没选）时，默认看当前登录的账号
+  const selected =
+    accounts.find((account) => account.id === selectedId) ??
+    accounts.find((account) => account.isCurrent) ??
+    accounts[0] ??
+    null;
 
   return (
-    <main className="flex h-screen flex-col gap-6 p-6">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-lg font-semibold">Factory 账号切换</h1>
-        <span className="text-xs text-muted-foreground">
-          Factory {state.factoryRunning ? "运行中" : "未运行"}
-        </span>
-      </header>
-      <CurrentAccountCard
-        current={state.current}
-        accounts={state.accounts}
-        busy={busy}
-        run={run}
+    <div className="flex h-screen">
+      <AccountSidebar
+        accounts={accounts}
+        usage={usage}
+        selectedId={selected?.id ?? null}
+        factoryRunning={state.factoryRunning}
+        onSelect={setSelectedId}
       />
-      <AccountList
-        accounts={state.accounts}
-        currentAccountId={currentAccountId}
-        busy={busy}
-        run={run}
-      />
-      <ActivityLog lines={lines} busy={busy} />
-    </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-h-0 flex-1 flex-col gap-12 overflow-auto px-10 py-8">
+          {state.current.kind !== "signed-in" && (
+            <SignedOutNotice current={state.current} busy={busy} run={run} />
+          )}
+          {selected ? (
+            <>
+              <AccountHeader
+                key={`header-${selected.id}`}
+                account={selected}
+                busy={busy}
+                run={run}
+              />
+              <UsageLimits
+                key={`usage-${selected.id}`}
+                entry={usage[selected.id]}
+                emptyState={
+                  <p className="text-muted-foreground">
+                    {selected.isCurrent
+                      ? "本地凭证暂时查不到用量。"
+                      : "还没有设置 API Key，无法查询这个账号的用量。在下面设置后显示。"}
+                  </p>
+                }
+              />
+              <ApiKeySection
+                key={`key-${selected.id}`}
+                account={selected}
+                busy={busy}
+                run={run}
+              />
+              <AccountActions
+                key={`actions-${selected.id}`}
+                account={selected}
+                busy={busy}
+                run={run}
+              />
+            </>
+          ) : (
+            <p className="text-muted-foreground">
+              还没有任何账号。在 Factory 里登录后回到这里备份。
+            </p>
+          )}
+        </main>
+        <ActivityLog lines={lines} busy={busy} />
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,12 @@
 import type { LogLine } from "../../lib/log";
 
-/** 底部状态区：显示最近几条操作进度和结果 */
+const TONE_CLASS = {
+  info: "text-muted-foreground",
+  success: "text-success-foreground",
+  error: "text-destructive-foreground",
+} as const;
+
+/** 底部状态栏：显示最近几条操作进度和结果 */
 export function ActivityLog({
   lines,
   busy,
@@ -8,11 +14,11 @@ export function ActivityLog({
   lines: LogLine[];
   busy: boolean;
 }) {
-  const latest = lines.slice(-4);
+  const latest = lines.slice(-3);
   return (
     <section
       aria-live="polite"
-      className="flex min-h-[88px] flex-col gap-1 rounded-lg border border-border bg-card px-4 py-3 text-sm"
+      className="flex min-h-[64px] flex-col justify-center gap-1 border-t border-border px-10 py-3 text-[11px]"
     >
       {latest.length === 0 && !busy ? (
         <p className="text-muted-foreground">状态：就绪</p>
@@ -20,7 +26,7 @@ export function ActivityLog({
         latest.map((line) => (
           <p
             key={line.id}
-            className={`whitespace-pre-wrap ${line.tone === "error" ? "text-destructive" : line.tone === "success" ? "text-success" : "text-muted-foreground"}`}
+            className={`whitespace-pre-wrap ${TONE_CLASS[line.tone]}`}
           >
             {line.text}
           </p>

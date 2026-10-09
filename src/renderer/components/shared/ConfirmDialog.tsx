@@ -20,7 +20,7 @@ export function ConfirmDialog({
 }) {
   return (
     <Modal title={title} onClose={onClose}>
-      <div className="flex flex-col gap-2 text-sm leading-6 text-muted-foreground">
+      <div className="flex flex-col gap-2 text-xs leading-5 text-secondary-foreground">
         {children}
       </div>
       <div className="flex justify-end gap-2">

@@ -12,6 +12,8 @@ export interface Env {
   /** 读取解密凭证文件用的 AES 密钥 */
   readEncryptionKey(): Promise<Buffer>;
   factory: FactoryProcess;
+  /** 查用量用的 HTTP 请求，测试时替换成假接口 */
+  httpFetch: typeof fetch;
   now(): number;
   /** 进度回调，界面上显示每一步 */
   report(message: string): void;
@@ -25,6 +27,7 @@ export function createDefaultEnv(report: (message: string) => void): Env {
     vaultDir: path.join(home, ".factory-switch"),
     readEncryptionKey: readKeychainEncryptionKey,
     factory: macFactoryProcess,
+    httpFetch: (input, init) => fetch(input, init),
     now: () => Date.now(),
     report,
   };
