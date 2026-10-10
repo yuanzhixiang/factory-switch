@@ -2,7 +2,7 @@
 
 ## 职责
 
-`package.json` 定义 Factory Switch 的版本、依赖、验证命令和 Electron 打包配置。当前版本为 `0.0.2`，对应 GitHub 标签 `v0.0.2`。
+`package.json` 定义 Factory Switch 的版本、依赖、验证命令和 Electron 打包配置。当前版本为 `0.0.3`，对应 GitHub 标签 `v0.0.3`。
 
 ## 构建与验证
 
