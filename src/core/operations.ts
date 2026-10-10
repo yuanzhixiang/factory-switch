@@ -25,6 +25,8 @@ import {
 
 // Factory 有进行中的会话时退出会慢一些，给足时间
 const QUIT_TIMEOUT_MS = 20_000;
+// droid 收到 SIGTERM 后留给它收尾的时间，超时再 SIGKILL
+const KILL_TIMEOUT_MS = 5_000;
 
 /** 用户能看懂的操作失败，界面直接展示 message */
 export class SwitchError extends Error {}
@@ -130,17 +132,33 @@ export async function backupCurrent(
   return `已备份「${account.label}」`;
 }
 
-/** 终端里还有 droid 在跑时不能切换，它会继续用旧 token 并可能写回凭证 */
-async function ensureNoCliDroid(env: Env): Promise<void> {
+/**
+ * 结束剩下的 droid 进程（终端里的命令行、桌面版残留的会话进程），
+ * 它们会继续用旧 token 并可能写回凭证。必须在 Factory 退出后做，否则 daemon 会再拉起会话进程
+ */
+async function killOtherDroids(env: Env): Promise<void> {
   const others = await env.factory.listOtherDroidProcesses();
-  if (others.length > 0) {
+  if (others.length === 0) {
+    return;
+  }
+  env.report(`正在结束 ${others.length} 个 droid 进程…`);
+  const survivors = new Set(
+    await env.factory.killProcesses(
+      others.map((p) => p.pid),
+      KILL_TIMEOUT_MS,
+    ),
+  );
+  if (survivors.size > 0) {
+    const lines = others
+      .filter((p) => survivors.has(p.pid))
+      .map((p) => `${p.pid} ${p.command}`);
     throw new SwitchError(
-      `终端里还有 droid 在运行，请先关掉：\n${others.join("\n")}`,
+      `这些 droid 进程结束不了，请手动结束后重试；Factory 已退出，可手动重新打开：\n${lines.join("\n")}`,
     );
   }
 }
 
-/** 退出 Factory 并等主进程和 daemon 都退出 */
+/** 退出 Factory 并等主进程和 daemon 都退出，再结束其余 droid 进程 */
 async function quitFactory(env: Env): Promise<void> {
   env.report("正在退出 Factory…");
   if (!(await env.factory.quit(QUIT_TIMEOUT_MS))) {
@@ -148,6 +166,7 @@ async function quitFactory(env: Env): Promise<void> {
       "Factory 没有在 20 秒内退出，请手动退出（Cmd+Q）后重试",
     );
   }
+  await killOtherDroids(env);
 }
 
 /** 退出 Factory 后，把当前账号的最新凭证存回它的备份；当前账号没备份过时返回 false */
@@ -175,8 +194,7 @@ async function prepareSessions(env: Env, backupDir: string): Promise<void> {
 
 /** 删除本地凭证，好让 Factory 回到登录页登录新账号；凭证移进备份区而不是直接删 */
 export async function deleteLocalCredentials(env: Env): Promise<string> {
-  // 1. 先检查再退出，避免白白关掉 Factory
-  await ensureNoCliDroid(env);
+  // 1. 退出 Factory 并结束其余 droid 进程
   await quitFactory(env);
 
   // 2. 已备份的账号先更新备份，确保拿到退出前最后一次刷新的 token
@@ -218,9 +236,7 @@ export async function switchTo(env: Env, accountId: string): Promise<string> {
       "当前登录的账号还没有备份，请先点「备份当前账号」再切换",
     );
   }
-  await ensureNoCliDroid(env);
-
-  // 2. 退出 Factory，并把当前账号最新的凭证存回备份，防止 token 刷新后旧备份失效
+  // 2. 退出 Factory、结束其余 droid 进程，并把当前账号最新的凭证存回备份，防止 token 刷新后旧备份失效
   await quitFactory(env);
   if (!(await refreshCurrentBackup(env))) {
     throw new SwitchError(

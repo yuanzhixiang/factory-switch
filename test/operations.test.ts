@@ -192,12 +192,30 @@ describe("switchTo", () => {
     expect(env.factory.calls).toEqual([]);
   });
 
-  it("终端里有 droid 时拒绝切换", async () => {
-    env.factory.otherDroids = ["123 /Users/me/.local/bin/droid"];
+  it("Factory 退出后结束其余 droid 进程再换凭证", async () => {
+    env.factory.otherDroids = [
+      { pid: 123, command: "/Users/me/.local/bin/droid" },
+      {
+        pid: 456,
+        command:
+          "/Applications/Factory.app/Contents/Resources/bin/droid exec --input-format stream-jsonrpc",
+      },
+    ];
+    await switchTo(env, accountIdFor(BOB));
+    expect(env.factory.calls).toEqual(["quit", "kill:123,456", "open"]);
+    expect(await currentRefreshToken()).toBe("refresh-user_bob-v1");
+  });
+
+  it("droid 进程结束不了就中止，不换凭证", async () => {
+    env.factory.otherDroids = [
+      { pid: 123, command: "/Users/me/.local/bin/droid" },
+    ];
+    env.factory.unkillable = [123];
     await expect(switchTo(env, accountIdFor(BOB))).rejects.toThrow(
-      "终端里还有 droid",
+      "123 /Users/me/.local/bin/droid",
     );
-    expect(env.factory.calls).toEqual([]);
+    expect(env.factory.calls).toEqual(["quit", "kill:123"]);
+    expect(await currentRefreshToken()).toBe("refresh-user_alice-v1");
   });
 
   it("Factory 退出超时就中止，不改任何文件", async () => {

@@ -4,13 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import { AUTH_FILE, encryptCredentials } from "../src/core/credentials";
 import type { Env } from "../src/core/env";
-import type { FactoryProcess } from "../src/core/factory-process";
+import type {
+  DroidProcess,
+  FactoryProcess,
+} from "../src/core/factory-process";
 
 /** 记录调用的假 Factory 进程 */
 export interface FakeFactory extends FactoryProcess {
   running: boolean;
   calls: string[];
-  otherDroids: string[];
+  otherDroids: DroidProcess[];
+  /** 发信号也结束不了的 pid */
+  unkillable: number[];
   quitSucceeds: boolean;
   /** 模拟 Factory 退出前最后一次刷新 token */
   onQuit: (() => Promise<void>) | null;
@@ -83,6 +88,7 @@ export async function createTestEnv(): Promise<TestEnv> {
     running: true,
     calls: [],
     otherDroids: [],
+    unkillable: [],
     quitSucceeds: true,
     onQuit: null,
     async isRunning() {
@@ -103,6 +109,14 @@ export async function createTestEnv(): Promise<TestEnv> {
     },
     async listOtherDroidProcesses() {
       return this.otherDroids;
+    },
+    async killProcesses(pids) {
+      this.calls.push(`kill:${pids.join(",")}`);
+      const survivors = pids.filter((pid) => this.unkillable.includes(pid));
+      this.otherDroids = this.otherDroids.filter(
+        (p) => !pids.includes(p.pid) || survivors.includes(p.pid),
+      );
+      return survivors;
     },
   };
   const reports: string[] = [];
