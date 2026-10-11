@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "danger" | "text";
+type Variant = "primary" | "secondary" | "outline-primary" | "danger" | "text";
 
 // 对齐 Factory 设置页：24px 高、4px 12px 内边距、2px 圆角
 const VARIANT_CLASSES: Record<Variant, string> = {
@@ -8,6 +8,9 @@ const VARIANT_CLASSES: Record<Variant, string> = {
     "border-primary bg-primary text-primary-foreground hover:border-primary-hover hover:bg-primary-hover",
   secondary:
     "border-border-strong bg-background text-foreground hover:border-foreground",
+  // 平时是描边按钮，悬停变成主色，用在列表里成排出现的主操作
+  "outline-primary":
+    "border-border-strong bg-background text-foreground hover:border-primary hover:bg-primary disabled:hover:border-border-strong disabled:hover:bg-background",
   danger:
     "border-border-strong bg-background text-destructive-foreground hover:border-destructive",
   text: "border-transparent text-secondary-foreground hover:text-foreground",

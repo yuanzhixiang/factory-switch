@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "icon": "sh scripts/build-icon.sh",
     "dist": "pnpm build && electron-builder --mac --dir",
     "dist:release": "pnpm build && electron-builder --mac dmg zip --arm64 --publish never"
   },
@@ -30,6 +31,7 @@
       "target": "dir",
       "artifactName": "Factory-Switch-${version}-${arch}.${ext}",
       "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
       "identity": null
     }
   },

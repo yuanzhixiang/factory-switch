@@ -189,6 +189,7 @@ export function UsageOverview({
                   ) : (
                     account.isSaved && (
                       <Button
+                        variant="outline-primary"
                         disabled={busy}
                         onClick={() => setSwitching(account)}
                       >

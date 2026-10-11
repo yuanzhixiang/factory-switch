@@ -16,6 +16,7 @@ pnpm start        # 开发运行
 pnpm dist         # 打包成 release/mac-arm64/Factory Switch.app
 pnpm dist:release # 打包 Apple Silicon 的 DMG 和 ZIP，不自动上传
 pnpm test         # 核心逻辑测试，只用临时目录，不碰真实 ~/.factory
+pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需要 rsvg-convert
 ```
 
 添加新账号：「备份当前账号」→「删除本地凭证」→ 在 Factory 登录新号 → 回来再点「备份当前账号」。之后在左侧选中账号，点「切换到此账号」。

@@ -4,7 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["out", "release", "node_modules"] },
+  { ignores: ["out", "release", "output", "node_modules"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
