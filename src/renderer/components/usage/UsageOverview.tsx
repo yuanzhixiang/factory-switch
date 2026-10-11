@@ -6,14 +6,18 @@ import type {
 } from "../../../shared/types";
 import type { AccountView } from "../../lib/accounts";
 import { formatClock } from "../../lib/format";
+import type { Run } from "../../lib/run";
 import {
   effectivePercent,
   formatDollars,
   formatReset,
-  summarizeMonthly,
+  summarizePeriod,
   usageLevel,
+  type WindowSummary,
 } from "../../lib/usage";
 import { useNow } from "../../lib/useNow";
+import { SwitchConfirmDialog } from "../detail/SwitchConfirmDialog";
+import { Button } from "../shared/Button";
 import { Section } from "../shared/Section";
 import {
   LEVEL_TEXT,
@@ -24,24 +28,31 @@ import {
   type Pool,
 } from "./UsageParts";
 
-const GRID = "grid grid-cols-[minmax(0,1fr)_repeat(3,112px)] items-center gap-4";
+const GRID =
+  "grid grid-cols-[minmax(0,1fr)_repeat(3,112px)_72px] items-center gap-4";
 
-/** 汇总页：所有账号月度用量相加，下面列出各账号三个周期的明细 */
+/** 汇总页：当前账号三个周期、所有账号周度和月度用量相加，下面列出各账号明细并可直接切换 */
 export function UsageOverview({
   accounts,
   usage,
+  busy,
+  run,
   onSelect,
 }: {
   accounts: AccountView[];
   usage: UsageMap;
+  busy: boolean;
+  run: Run;
   onSelect: (id: string) => void;
 }) {
   const [pool, setPool] = useState<Pool>("standard");
+  const [switching, setSwitching] = useState<AccountView | null>(null);
   const now = useNow();
   const snapshots = accounts
     .map((account) => usage[account.id]?.snapshot)
     .filter((snapshot): snapshot is UsageSnapshot => Boolean(snapshot));
-  const monthly = summarizeMonthly(snapshots, pool, now);
+  const weekly = summarizePeriod(snapshots, pool, "weekly", now);
+  const monthly = summarizePeriod(snapshots, pool, "monthly", now);
   const lastFetched =
     snapshots.length > 0
       ? Math.max(...snapshots.map((snapshot) => snapshot.fetchedAt))
@@ -49,6 +60,34 @@ export function UsageOverview({
   const extraCents = snapshots.reduce(
     (total, snapshot) => total + snapshot.extraUsageCents,
     0,
+  );
+  const current = accounts.find((account) => account.isCurrent) ?? null;
+  const currentEntry = current ? usage[current.id] : undefined;
+  const currentWindows = currentEntry?.snapshot?.[pool];
+  // 整页共用一个池切换，放在最上面那个区块的标题右侧
+  const toggle = snapshots.length > 0 && (
+    <PoolToggle value={pool} onChange={setPool} />
+  );
+
+  const windowBar = (label: string, window: UsageWindow) => (
+    <UsageBar
+      label={label}
+      percent={effectivePercent(window, now)}
+      detail={<ResetHint text={formatReset(window.windowEnd, now)} />}
+    />
+  );
+
+  const summaryBar = (label: string, summary: WindowSummary) => (
+    <UsageBar
+      label={label}
+      percent={summary.percent}
+      detail={
+        <>
+          已用 {summary.usedAccounts.toFixed(1)} / {summary.accounts} 个账号 ·{" "}
+          <ResetHint text={`最近 ${formatReset(summary.nextReset, now)}`} />
+        </>
+      }
+    />
   );
 
   return (
@@ -61,25 +100,42 @@ export function UsageOverview({
         </p>
       </header>
 
-      <Section
-        title="Usage Limits"
-        action={monthly && <PoolToggle value={pool} onChange={setPool} />}
-      >
-        {monthly ? (
+      {current && (
+        <Section
+          title={
+            <>
+              当前账号{" "}
+              <span className="text-muted-foreground">
+                · {current.isSaved ? current.label : "未备份的账号"}
+              </span>
+            </>
+          }
+          action={toggle}
+        >
+          {currentWindows ? (
+            <div className="flex flex-col gap-4">
+              {windowBar("5-hour usage", currentWindows.fiveHour)}
+              {windowBar("Weekly usage", currentWindows.weekly)}
+              {windowBar("Monthly usage", currentWindows.monthly)}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">
+              {currentEntry ? "当前账号暂时查不到用量。" : "正在查询…"}
+            </p>
+          )}
+        </Section>
+      )}
+
+      <Section title="全部账号合计" action={!current && toggle}>
+        {weekly && monthly ? (
           <>
-            <UsageBar
-              label="Monthly usage"
-              percent={monthly.percent}
-              detail={
-                <>
-                  已用 {monthly.usedAccounts.toFixed(1)} / {monthly.accounts}{" "}
-                  个账号 · <ResetHint text={`最近 ${formatReset(monthly.nextReset, now)}`} />
-                </>
-              }
-            />
+            <div className="flex flex-col gap-4">
+              {summaryBar("Weekly usage", weekly)}
+              {summaryBar("Monthly usage", monthly)}
+            </div>
             <p className="text-[11px] text-muted-foreground">
-              {monthly.accounts} 个账号的月度用量直接相加 · Extra Usage 合计{" "}
-              {formatDollars(extraCents)} remaining · 每 30 秒刷新
+              {monthly.accounts} 个账号的周度、月度用量各自直接相加 · Extra
+              Usage 合计 {formatDollars(extraCents)} remaining · 每 30 秒刷新
             </p>
           </>
         ) : (
@@ -98,34 +154,62 @@ export function UsageOverview({
             <span>5-hour</span>
             <span>Weekly</span>
             <span>Monthly</span>
+            <span />
           </div>
           {accounts.map((account) => {
-            const snapshot = usage[account.id]?.snapshot ?? null;
-            const windows = snapshot?.[pool];
+            const windows = usage[account.id]?.snapshot?.[pool];
             return (
-              <button
+              <div
                 key={account.id}
-                type="button"
-                onClick={() => onSelect(account.id)}
-                className={`${GRID} h-9 rounded-[2px] px-2 text-left text-[13px] transition-colors hover:bg-muted`}
+                className={`${GRID} h-9 rounded-[2px] px-2 text-[13px] transition-colors hover:bg-muted`}
               >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`size-1.5 shrink-0 rounded-full ${account.isCurrent ? "bg-primary" : "bg-transparent"}`}
-                    aria-label={account.isCurrent ? "当前登录" : undefined}
-                  />
-                  <span className="truncate">
-                    {account.isSaved ? account.label : "未备份的账号"}
+                <button
+                  type="button"
+                  onClick={() => onSelect(account.id)}
+                  className="col-span-4 grid h-full grid-cols-subgrid items-center text-left"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={`size-1.5 shrink-0 rounded-full ${account.isCurrent ? "bg-primary" : "bg-transparent"}`}
+                      aria-label={account.isCurrent ? "当前登录" : undefined}
+                    />
+                    <span className="truncate">
+                      {account.isSaved ? account.label : "未备份的账号"}
+                    </span>
                   </span>
+                  <MiniUsage window={windows?.fiveHour} now={now} />
+                  <MiniUsage window={windows?.weekly} now={now} />
+                  <MiniUsage window={windows?.monthly} now={now} />
+                </button>
+                <span className="flex justify-end">
+                  {account.isCurrent ? (
+                    <span className="flex h-6 items-center rounded-[2px] bg-accent px-2 text-xs text-primary-hover">
+                      当前登录
+                    </span>
+                  ) : (
+                    account.isSaved && (
+                      <Button
+                        disabled={busy}
+                        onClick={() => setSwitching(account)}
+                      >
+                        切换
+                      </Button>
+                    )
+                  )}
                 </span>
-                <MiniUsage window={windows?.fiveHour} now={now} />
-                <MiniUsage window={windows?.weekly} now={now} />
-                <MiniUsage window={windows?.monthly} now={now} />
-              </button>
+              </div>
             );
           })}
         </div>
       </Section>
+
+      {switching && (
+        <SwitchConfirmDialog
+          account={switching}
+          run={run}
+          onClose={() => setSwitching(null)}
+        />
+      )}
     </>
   );
 }

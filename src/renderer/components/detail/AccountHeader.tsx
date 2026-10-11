@@ -3,7 +3,7 @@ import type { Run } from "../../lib/run";
 import type { AccountView } from "../../lib/accounts";
 import { shortId } from "../../lib/format";
 import { Button } from "../shared/Button";
-import { ConfirmDialog } from "../shared/ConfirmDialog";
+import { SwitchConfirmDialog } from "./SwitchConfirmDialog";
 
 /** 详情页顶部：账号名字和身份，右上角是「当前登录」标记或「切换到此账号」 */
 export function AccountHeader({
@@ -47,17 +47,11 @@ export function AccountHeader({
       )}
 
       {confirming && (
-        <ConfirmDialog
-          title={`切换到「${account.label}」`}
-          confirmLabel="切换"
+        <SwitchConfirmDialog
+          account={account}
+          run={run}
           onClose={() => setConfirming(false)}
-          onConfirm={() => run(() => window.factorySwitch.switchTo(account.id))}
-        >
-          <p>
-            将退出
-            Factory（正在运行的会话会中断），换入这个账号的凭证后重新打开。
-          </p>
-        </ConfirmDialog>
+        />
       )}
     </header>
   );

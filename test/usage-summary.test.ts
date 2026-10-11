@@ -1,7 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { summarizeWindows } from "../src/renderer/lib/usage";
+import type { UsagePool, UsageSnapshot } from "../src/shared/types";
+import { summarizePeriod, summarizeWindows } from "../src/renderer/lib/usage";
 
 const NOW = 1_000_000;
+
+function pool(weekly: number, monthly: number): UsagePool {
+  return {
+    fiveHour: { usedPercent: 0, windowEnd: null },
+    weekly: { usedPercent: weekly, windowEnd: NOW + weekly },
+    monthly: { usedPercent: monthly, windowEnd: NOW + monthly },
+  };
+}
+
+function snapshot(standard: UsagePool, core: UsagePool): UsageSnapshot {
+  return {
+    standard,
+    core,
+    extraUsageCents: 0,
+    overagePreference: null,
+    fetchedAt: NOW,
+  };
+}
+
+describe("summarizePeriod", () => {
+  const snapshots = [
+    snapshot(pool(51, 26), pool(5, 1)),
+    snapshot(pool(33, 17), pool(7, 3)),
+  ];
+
+  it("按池和周期取对应的用量相加", () => {
+    expect(summarizePeriod(snapshots, "standard", "weekly", NOW)).toEqual({
+      accounts: 2,
+      usedAccounts: 0.84,
+      percent: 42,
+      nextReset: NOW + 33,
+    });
+    expect(summarizePeriod(snapshots, "standard", "monthly", NOW)?.percent).toBe(22);
+    expect(summarizePeriod(snapshots, "core", "weekly", NOW)?.percent).toBe(6);
+  });
+});
 
 describe("summarizeWindows", () => {
   it("没有账号时返回 null", () => {

@@ -102,6 +102,8 @@ export function App() {
             <UsageOverview
               accounts={accounts}
               usage={usage}
+              busy={busy}
+              run={run}
               onSelect={setSelectedId}
             />
           ) : selected ? (

@@ -54,14 +54,15 @@ export function summarizeWindows(
   };
 }
 
-/** 有快照的账号某个池的月度汇总，侧边栏和汇总页共用 */
-export function summarizeMonthly(
+/** 有快照的账号某个池、某个周期的汇总，侧边栏和汇总页共用 */
+export function summarizePeriod(
   snapshots: UsageSnapshot[],
   pool: "standard" | "core",
+  period: "weekly" | "monthly",
   now: number,
 ): WindowSummary | null {
   return summarizeWindows(
-    snapshots.map((snapshot) => snapshot[pool].monthly),
+    snapshots.map((snapshot) => snapshot[pool][period]),
     now,
   );
 }

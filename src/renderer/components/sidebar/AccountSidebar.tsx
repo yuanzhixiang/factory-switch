@@ -1,6 +1,6 @@
 import type { UsageMap, UsageSnapshot } from "../../../shared/types";
 import type { AccountView } from "../../lib/accounts";
-import { effectivePercent, summarizeMonthly, usageLevel } from "../../lib/usage";
+import { effectivePercent, summarizePeriod, usageLevel } from "../../lib/usage";
 import { useNow } from "../../lib/useNow";
 import { LEVEL_TEXT } from "../usage/UsageParts";
 
@@ -28,7 +28,7 @@ export function AccountSidebar({
   const snapshots = accounts
     .map((account) => usage[account.id]?.snapshot)
     .filter((snapshot): snapshot is UsageSnapshot => Boolean(snapshot));
-  const monthly = summarizeMonthly(snapshots, "standard", now);
+  const monthly = summarizePeriod(snapshots, "standard", "monthly", now);
   const overviewSelected = selectedId === OVERVIEW_ID;
 
   return (
