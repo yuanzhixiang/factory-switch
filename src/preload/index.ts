@@ -11,6 +11,7 @@ function subscribe<T>(channel: string, listener: (payload: T) => void) {
 }
 
 const api: FactorySwitchApi = {
+  getCursorCurrent: () => ipcRenderer.invoke("get-cursor-current"),
   getState: () => ipcRenderer.invoke("get-state"),
   backupCurrent: (label) => ipcRenderer.invoke("backup-current", label),
   deleteLocalCredentials: () => ipcRenderer.invoke("delete-local-credentials"),

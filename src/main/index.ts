@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import { readCursorCurrent } from "../core/cursor-current";
 import { app, BrowserWindow, ipcMain, Notification } from "electron";
 import { createDefaultEnv } from "../core/env";
 import {
@@ -69,6 +71,9 @@ async function runOperation(
 
 /** 注册页面可以调用的全部操作 */
 function registerIpc(): void {
+  ipcMain.handle("get-cursor-current", () => readCursorCurrent(
+    path.join(os.homedir(), "Library/Application Support/Cursor"),
+  ));
   ipcMain.handle("get-state", () => getState(env));
   ipcMain.handle("backup-current", (_event, label: string | null) =>
     runOperation(() => backupCurrent(env, label)),

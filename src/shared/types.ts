@@ -75,8 +75,22 @@ export interface OperationResult {
   state: AppState;
 }
 
+/** Cursor 只读识别结果：不包含凭证，也不代表服务端认证成功。 */
+export type CursorCurrentState = {
+  dataDirectory: string;
+  checkedAt: number;
+} & (
+  | { kind: "identified"; userId: string; email: string | null; name: string | null;
+      expiresAt: number | null; tokenStatus: "unexpired" | "expired" | "unknown";
+      hasRefreshToken: boolean; membership: string | null; subscription: string | null;
+      cacheMismatch: boolean }
+  | { kind: "signed-out" }
+  | { kind: "unreadable"; message: string }
+);
+
 /** preload 暴露给页面的接口 */
 export interface FactorySwitchApi {
+  getCursorCurrent(): Promise<CursorCurrentState>;
   getState(): Promise<AppState>;
   backupCurrent(label: string | null): Promise<OperationResult>;
   deleteLocalCredentials(): Promise<OperationResult>;

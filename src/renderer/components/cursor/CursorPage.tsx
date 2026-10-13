@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { CursorCurrentState } from "../../../shared/types";
 import { Button } from "../shared/Button";
 import { Modal } from "../shared/Modal";
 import { Section } from "../shared/Section";
@@ -17,8 +18,35 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"add" | "switch" | "login" | null>(null);
   const [targetLabel, setTargetLabel] = useState("");
-  const accounts = showExamples ? EXAMPLES : [];
+  const [current, setCurrent] = useState<CursorCurrentState | null>(null);
+  const [reading, setReading] = useState(true);
+  const refresh = useCallback(async () => {
+    setReading(true);
+    try {
+      setCurrent(await window.factorySwitch.getCursorCurrent());
+    } catch {
+      setCurrent({ kind: "unreadable", dataDirectory: "—", checkedAt: Date.now(), message: "账号读取失败，请稍后刷新" });
+    } finally { setReading(false); }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    void window.factorySwitch.getCursorCurrent().then((result) => {
+      if (active) setCurrent(result);
+    }).catch(() => {
+      if (active) setCurrent({ kind: "unreadable", dataDirectory: "—", checkedAt: Date.now(), message: "账号读取失败，请稍后刷新" });
+    }).finally(() => { if (active) setReading(false); });
+    return () => { active = false; };
+  }, []);
+  const realAccount = current?.kind === "identified" ? {
+    id: "current", label: current.name ?? current.email ?? "当前本地账号",
+    email: current.email ?? "邮箱缓存不可用", status: "已识别 · 未验证", sync: "未接入",
+  } : null;
+  const accounts = showExamples ? EXAMPLES : realAccount ? [realAccount] : [];
   const selected = accounts.find((account) => account.id === selectedId);
+  const isReal = selected?.id === "current";
+  const localStatus = current?.kind === "identified"
+    ? current.tokenStatus === "expired" ? "已到期" : current.tokenStatus === "unexpired" ? "未到期" : "到期时间未知"
+    : "—";
 
   function preview(action: "switch" | "login", label: string) {
     setTargetLabel(label);
@@ -45,9 +73,9 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
             <button key={account.id} type="button" onClick={() => setSelectedId(account.id)}
               aria-current={selectedId === account.id ? "page" : undefined}
               className={`flex h-8 items-center gap-2 rounded-[2px] px-2 text-left text-[13px] ${selectedId === account.id ? "bg-muted" : "hover:bg-muted"}`}>
-              <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${account.id === "work" ? "bg-primary" : "bg-transparent"}`} />
+              <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${account.id === "work" || account.id === "current" ? "bg-primary" : "bg-transparent"}`} />
               {account.label}
-              <span className="ml-auto text-[10px] text-muted-foreground">示例</span>
+              <span className="ml-auto text-[10px] text-muted-foreground">{showExamples ? "示例" : "本地"}</span>
             </button>
           ))}
         </nav>
@@ -61,33 +89,46 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
               <h1 className="text-sm">{selected ? selected.label : "Cursor 账号"}</h1>
               <p className="leading-5 text-muted-foreground">独立账号目录，共享本地会话。</p>
             </div>
-            <Button onClick={() => setDialog("add")}>+ 添加账号</Button>
+            <div className="flex gap-2">
+              <Button disabled={reading} onClick={() => void refresh()}>{reading ? "读取中…" : "刷新账号"}</Button>
+              <Button onClick={() => setDialog("add")}>+ 添加账号</Button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-4 border border-border bg-sidebar px-4 py-3">
             <div className="flex flex-col gap-1 leading-5">
-              <p>{showExamples ? "正在查看布局示例" : "界面预览 · 尚未接入 Cursor"}</p>
-              <p className="text-muted-foreground">{showExamples ? "下方账号及同步状态均为示例，不对应本机数据。" : "账号登录、目录创建和会话同步尚未开放。"}</p>
+              <p>{showExamples ? "正在查看布局示例" : "当前账号 · 只读识别"}</p>
+              <p className="text-muted-foreground">{showExamples ? "下方账号及同步状态均为示例，不对应本机数据。" : "仅读取默认目录的本地账号信息，未向服务器验证登录有效性。"}</p>
             </div>
             <Button onClick={() => { setShowExamples(!showExamples); setSelectedId(null); }}>
-              {showExamples ? "返回空状态" : "查看布局示例"}
+              {showExamples ? "返回真实账号" : "查看布局示例"}
             </Button>
           </div>
+
+          {!showExamples && current?.kind === "unreadable" && <p role="alert" className="leading-5 text-destructive-foreground">{current.message}</p>}
+          {!showExamples && current?.kind === "identified" && current.cacheMismatch &&
+            <p role="status" className="leading-5 text-warning-foreground">部分缓存属于其他账号，已隐藏不匹配的信息。账号 ID 以当前凭证声明为准。</p>}
 
           {selected ? (
             <Section title="账号详情">
               <dl className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-4">
                 <dt className="text-muted-foreground">邮箱</dt><dd>{selected.email}</dd>
                 <dt className="text-muted-foreground">账号状态</dt><dd>{selected.status}</dd>
-                <dt className="text-muted-foreground">独立目录</dt><dd>尚未创建</dd>
+                {isReal && current?.kind === "identified" && <>
+                  <dt className="text-muted-foreground">账号 ID</dt><dd className="break-all">{current.userId}</dd>
+                  <dt className="text-muted-foreground">凭证状态</dt><dd>{localStatus} · {current.hasRefreshToken ? "有刷新凭证" : "无刷新凭证"}</dd>
+                  <dt className="text-muted-foreground">声明到期时间</dt><dd>{current.expiresAt ? new Date(current.expiresAt).toLocaleString("zh-CN") : "—"}</dd>
+                  <dt className="text-muted-foreground">订阅缓存</dt><dd>{current.membership ?? "—"} / {current.subscription ?? "—"}（未向服务器验证）</dd>
+                </>}
+                <dt className="text-muted-foreground">{isReal ? "当前数据目录" : "独立目录"}</dt><dd className="break-all">{isReal ? current?.dataDirectory : "尚未创建"}</dd>
                 <dt className="text-muted-foreground">上次使用</dt><dd>—</dd>
                 <dt className="text-muted-foreground">同步记录</dt><dd>尚未执行同步</dd>
               </dl>
-              <div className="mt-2 flex gap-2">
+              {!isReal && <div className="mt-2 flex gap-2">
                 <Button onClick={() => preview(selected.id === "spare" ? "login" : "switch", selected.label)}>
                   {selected.id === "spare" ? "查看登录流程" : "查看切换流程"}
                 </Button>
-              </div>
+              </div>}
             </Section>
           ) : (
             <Section title="账号列表">
@@ -111,7 +152,7 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
                         <td className="py-4 pr-4 whitespace-nowrap">{account.status}</td>
                         <td className="py-4 pr-4 whitespace-nowrap text-muted-foreground">{account.sync}</td>
                         <td className="py-4 text-right">
-                          {account.id === "work" ? <span className="rounded-[2px] bg-accent px-2 py-1 text-primary">示例当前</span> :
+                          {account.id === "work" || account.id === "current" ? <span className="rounded-[2px] bg-accent px-2 py-1 text-primary">{showExamples ? "示例当前" : "本地账号"}</span> :
                             <Button onClick={() => preview(account.id === "spare" ? "login" : "switch", account.label)}>
                               {account.id === "spare" ? "预览登录" : "预览切换"}
                             </Button>}
@@ -120,8 +161,8 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
                     ))}
                     {accounts.length === 0 && (
                       <tr><td colSpan={4} className="py-9 text-center">
-                        <p>还没有接入 Cursor 账号</p>
-                        <p className="mt-2 text-muted-foreground">可以先查看布局示例和添加账号流程。</p>
+                        <p>{reading ? "正在读取本地账号…" : current?.kind === "unreadable" ? "无法识别本地账号" : "未发现 Cursor 本地登录凭证"}</p>
+                        <p className="mt-2 text-muted-foreground">{reading ? "" : "可以在 Cursor 中检查登录状态后刷新；也可以查看布局示例。"}</p>
                       </td></tr>
                     )}
                   </tbody>
@@ -147,7 +188,7 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
           </Section>
         </main>
         <footer className="flex min-h-[64px] items-center border-t border-border px-10 py-3 text-[11px] text-muted-foreground">
-          状态：界面预览 · 未连接 Cursor
+          {showExamples ? "状态：布局示例" : reading ? "状态：正在只读识别…" : `状态：只读识别 · ${current ? new Date(current.checkedAt).toLocaleTimeString("zh-CN") : "—"} · 登录有效性未验证`}
         </footer>
       </div>
 
@@ -166,7 +207,7 @@ export function CursorPage({ productSwitcher }: { productSwitcher: ReactNode }) 
                 <ol className="list-inside list-decimal space-y-1">{STEPS.map((step) => <li key={step}>{step}</li>)}</ol>
               </>
             )}
-            <p>本次预览不会创建目录、读取凭证、同步会话或退出 Cursor。</p>
+            <p>此弹窗仅说明流程，不会创建目录、修改凭证、同步会话或退出 Cursor。</p>
           </div>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setDialog(null)}>关闭</Button>
