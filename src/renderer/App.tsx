@@ -13,9 +13,20 @@ import { UsageLimits } from "./components/usage/UsageLimits";
 import { UsageOverview } from "./components/usage/UsageOverview";
 import { buildAccountViews } from "./lib/accounts";
 import type { LogLine } from "./lib/log";
+import { CursorPage } from "./components/cursor/CursorPage";
+import { ProductSwitcher, type Product } from "./components/sidebar/ProductSwitcher";
+
+function initialProduct(): Product {
+  try {
+    return localStorage.getItem("selected-product") === "cursor" ? "cursor" : "factory";
+  } catch {
+    return "factory";
+  }
+}
 
 /** 页面：左侧账号导航，右侧是全部账号汇总，或选中账号的身份、用量、API Key 和操作 */
 export function App() {
+  const [product, setProduct] = useState<Product>(initialProduct);
   const [state, setState] = useState<AppState | null>(null);
   const [usage, setUsage] = useState<UsageMap>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -33,7 +44,7 @@ export function App() {
     const unsubscribes = [
       api.onProgress((message) => log(message)),
       api.onUsage(setUsage),
-      api.onSelectAccount(setSelectedId),
+      api.onSelectAccount((id) => { setProduct("factory"); setSelectedId(id); }),
     ];
     void api.getUsage().then(setUsage);
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
@@ -70,6 +81,15 @@ export function App() {
     [log],
   );
 
+  const productSwitcher = <ProductSwitcher product={product} disabled={busy} onChange={(next) => {
+    setProduct(next);
+    try { localStorage.setItem("selected-product", next); } catch { /* 无法保存偏好时仍允许切页 */ }
+  }} />;
+
+  if (product === "cursor") {
+    return <CursorPage productSwitcher={productSwitcher} />;
+  }
+
   if (!state) {
     return <p className="p-10 text-muted-foreground">正在读取…</p>;
   }
@@ -92,6 +112,7 @@ export function App() {
         selectedId={showOverview ? OVERVIEW_ID : (selected?.id ?? null)}
         factoryRunning={state.factoryRunning}
         onSelect={setSelectedId}
+        productSwitcher={productSwitcher}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="flex min-h-0 flex-1 flex-col gap-12 overflow-auto px-10 py-8">

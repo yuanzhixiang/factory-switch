@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { UsageMap, UsageSnapshot } from "../../../shared/types";
 import type { AccountView } from "../../lib/accounts";
 import { effectivePercent, summarizePeriod, usageLevel } from "../../lib/usage";
@@ -17,12 +18,14 @@ export function AccountSidebar({
   selectedId,
   factoryRunning,
   onSelect,
+  productSwitcher,
 }: {
   accounts: AccountView[];
   usage: UsageMap;
   selectedId: string | null;
   factoryRunning: boolean;
   onSelect: (id: string) => void;
+  productSwitcher: ReactNode;
 }) {
   const now = useNow();
   const snapshots = accounts
@@ -39,6 +42,7 @@ export function AccountSidebar({
         </span>
         FACTORY SWITCH
       </div>
+      {productSwitcher}
 
       <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
         <p className="px-2 pb-1 font-mono text-[11px] tracking-[0.04em] text-muted-foreground">
