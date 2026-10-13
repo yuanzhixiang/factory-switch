@@ -16,6 +16,7 @@ pnpm start        # 开发运行
 pnpm dist         # 打包成 release/mac-arm64/Factory Switch.app
 pnpm dist:release # 打包 Apple Silicon 的 DMG 和 ZIP，不自动上传
 pnpm test         # 核心逻辑测试，只用临时目录，不碰真实 ~/.factory
+pnpm test -- test/cursor-migration.test.ts # Cursor 合成数据库迁移实验，需要 Node.js 24
 pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需要 rsvg-convert
 ```
 
@@ -35,6 +36,14 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - 会话：`~/.factory/sessions/<项目目录>/<id>.jsonl`，首行 `session_start` 带 `organizationId`。左侧列表读 `~/.factory/cache/session-index/index.db`，可见规则是 `org_id IS NULL OR org_id = 当前组织`。索引更新时新值为空会保留旧值，所以去掉会话文件的标记后必须让索引重建。
 
 ## 行为
+
+### Cursor 会话迁移实验（仅测试）
+
+- `test/cursor-migration.test.ts` 在系统临时目录创建来源账号和目标账号的全局、工作区数据库，使用合成凭证、消息和检查点，不读取或修改真实 Cursor 数据，不启动或退出 Cursor。
+- 表结构参考本机 Cursor 3.24.12：全局 `ItemTable` 保存账号状态，`cursorDiskKV` 保存会话记录，`composerHeaders` 保存列表与工作区关联。实验记录中的 `refs` 引用清单和工作区入口内容由测试定义。
+- 从清单收集一条会话的依赖闭包，逐字节复制消息、检查点、Agent 状态和二进制内容，合并会话列表及工作区入口；目标原有会话保留，全局账号状态及其他工作区字段不变。
+- 缺失引用、白名单之外的引用、缺少工作区入口均拒绝迁移；同键不同内容拒绝覆盖，重复导入不产生重复记录。写入异常时事务回滚；写入前使用 SQLite backup 保存包含 WAL 最新数据的快照。
+- 该实验不接入应用界面或生产操作，也没有独立账号目录启动器。测试结束关闭连接并删除临时目录。
 
 ### 备份当前账号
 
@@ -98,6 +107,8 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 
 ## 已知限制
 
+- Cursor 实验只证明合成夹具的完整迁移及目标本地账号状态不变，不证明真实 Cursor 能加载、续聊或保持服务端登录有效。真实引用格式、外部附件、云端资源、搜索索引、子会话和跨版本兼容性仍需验证；实验白名单不能直接用于真实数据。
+- Cursor 实验覆盖普通异常下两份目标数据库的事务回滚，不保证 WAL 模式下跨数据库的断电原子性；正式实现需要崩溃恢复日志和更完整的冲突处理。
 - 依赖逆向得到的文件格式，Factory 升级改了存储方式后读身份会失败，界面显示「读不出当前凭证」。
 - 重装 Factory 若换了钥匙串密钥，所有备份都会解不开。
 - 程序没签名，首次打开需要在 Finder 里右键「打开」。
