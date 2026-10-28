@@ -16,6 +16,7 @@ import {
   formatTokens,
   formatUsd,
 } from "../../lib/token-usage/format";
+import { changeRatio, formatChange } from "../../lib/token-usage/compare";
 import type { DailyTotals, HourlyTotals } from "../../lib/token-usage/merge";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION } from "../../lib/token-usage/providers";
 import { ProviderMark } from "./ProviderMark";
@@ -48,6 +49,11 @@ interface UsageProviderChartProps {
   readonly resolution: "day" | "hour";
   readonly timeZone: string;
   readonly hour12: boolean;
+  /** 环比用的上一周期，和当前周期按位置一一对应；不传则不画 */
+  readonly previous?: {
+    readonly periods: readonly string[];
+    readonly totals: readonly (DailyTotals | HourlyTotals)[];
+  };
 }
 
 export interface DayColumn {
@@ -188,11 +194,12 @@ const PLACEHOLDER_TICKS = Array.from({ length: TICK_COUNT + 1 }, (_, index) => i
 function chartScale(
   columns: readonly DayColumn[],
   loadingProviders: ReadonlySet<UsageProviderKind>,
+  extraPeak = 0,
 ) {
   // 各条曲线都从 0 起画、互相叠放，取单条最高值而不是相加，避免浪费纵向空间
   const peak = columns.reduce(
     (max, column) => column.bands.reduce((inner, band) => Math.max(inner, band.value), max),
-    0,
+    extraPeak,
   );
   return peak === 0 && loadingProviders.size > 0
     ? { max: TICK_COUNT, ticks: PLACEHOLDER_TICKS, labeled: false }
@@ -209,9 +216,10 @@ function buildChart(
   metric: UsageChartMetric,
   providers: readonly UsageProviderKind[],
   loadingProviders: ReadonlySet<UsageProviderKind>,
+  previousValues: readonly number[] | null,
 ) {
   const columns = buildPeriodColumns(periods, byPeriod, metric);
-  const scale = chartScale(columns, loadingProviders);
+  const scale = chartScale(columns, loadingProviders, Math.max(0, ...(previousValues ?? [])));
   const stepX = periods.length < 2 ? 0 : VIEW_WIDTH / (periods.length - 1);
   const paths = providers.map((provider) => {
     const slot = PROVIDER_ORDER.indexOf(provider);
@@ -232,7 +240,25 @@ function buildChart(
     };
   });
 
-  return { columns, scale, stepX, paths: paths.toSorted((a, b) => b.total - a.total) };
+  const previousLine =
+    previousValues === null
+      ? null
+      : curvePath(
+          smoothCurve(
+            previousValues.map((value, periodIndex) => ({
+              x: periodIndex * stepX,
+              y: valueToY(value, scale.max),
+            })),
+          ),
+        );
+
+  return {
+    columns,
+    scale,
+    stepX,
+    previousLine,
+    paths: paths.toSorted((a, b) => b.total - a.total),
+  };
 }
 
 function UsageChartTooltip({
@@ -242,6 +268,7 @@ function UsageChartTooltip({
   providers,
   loadingProviders,
   format,
+  previous,
 }: {
   readonly tooltipRef: Ref<HTMLDivElement>;
   readonly label: string;
@@ -249,6 +276,7 @@ function UsageChartTooltip({
   readonly providers: readonly UsageProviderKind[];
   readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   readonly format: (value: number) => string;
+  readonly previous: { readonly label: string; readonly value: number } | undefined;
 }) {
   const partial = providers.some((provider) => loadingProviders.has(provider));
   return (
@@ -286,6 +314,18 @@ function UsageChartTooltip({
           {format(column?.total ?? 0)}
         </span>
       </div>
+      {previous === undefined ? null : (
+        <div className="mt-1 flex flex-col gap-0.5 border-t border-dashed border-border pt-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">上一周期 {previous.label}</span>
+            <span className="text-foreground tabular-nums">{format(previous.value)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">环比</span>
+            <ChangeText current={column?.total ?? 0} previous={previous.value} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -300,7 +340,9 @@ function UsageChartPlot({
   formatTooltipPeriod,
   ariaLabel,
   children,
+  previousAt,
 }: {
+  readonly previousAt?: (index: number) => { readonly label: string; readonly value: number } | undefined;
   readonly periods: readonly string[];
   readonly columns: readonly DayColumn[];
   readonly stepX: number;
@@ -409,6 +451,7 @@ function UsageChartPlot({
           providers={providers}
           loadingProviders={loadingProviders}
           format={format}
+          previous={previousAt?.(hoverIndex)}
         />
       )}
     </div>
@@ -427,18 +470,34 @@ export function UsageProviderChart({
   resolution,
   timeZone,
   hour12,
+  previous,
 }: UsageProviderChartProps) {
   const periods = resolution === "hour" ? hours : days;
   const totals: readonly (DailyTotals | HourlyTotals)[] = resolution === "hour" ? hourly : daily;
   const byPeriod = new Map(
     totals.map((entry) => ["hourStart" in entry ? entry.hourStart : entry.day, entry]),
   );
-  const { columns, scale, paths, stepX } = buildChart(
+  // 上一周期每个位置的合计（只算当前显示的提供方），和当前周期按位置对齐
+  const previousByPeriod =
+    previous === undefined
+      ? null
+      : new Map(
+          previous.totals.map((entry) => ["hourStart" in entry ? entry.hourStart : entry.day, entry]),
+        );
+  const previousValues =
+    previous === undefined || previousByPeriod === null
+      ? null
+      : periods.map((_, index) => {
+          const entry = previousByPeriod.get(previous.periods[index] ?? "");
+          return providers.reduce((sum, provider) => sum + valueFor(entry, provider, metric), 0);
+        });
+  const { columns, scale, paths, stepX, previousLine } = buildChart(
     periods,
     byPeriod,
     metric,
     providers,
     loadingProviders,
+    previousValues,
   );
 
   const toY = (value: number) => valueToY(value, scale.max);
@@ -477,6 +536,16 @@ export function UsageProviderChart({
           loadingProviders={loadingProviders}
           format={format}
           formatTooltipPeriod={formatTooltipPeriod}
+          previousAt={
+            previous === undefined || previousValues === null
+              ? undefined
+              : (index) => {
+                  const period = previous.periods[index];
+                  return period === undefined
+                    ? undefined
+                    : { label: formatTooltipPeriod(period), value: previousValues[index] ?? 0 };
+                }
+          }
           ariaLabel={`各提供方${resolution === "hour" ? "每小时" : "每日"}${metric === "tokens" ? "处理的 token" : "费用"}`}
         >
           {scale.ticks.map((tick) => {
@@ -496,6 +565,17 @@ export function UsageProviderChart({
             );
           })}
 
+          {previousLine === null ? null : (
+            <path
+              d={previousLine}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+              className="text-muted-foreground"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
           {paths.map(({ provider, loading, area }) => (
             <path
               key={provider}
@@ -519,6 +599,18 @@ export function UsageProviderChart({
         </UsageChartPlot>
       </div>
 
+      {previous === undefined ? null : (
+        <div className="flex items-center gap-4 pl-16 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden className="h-0.5 w-4 rounded-full bg-primary" />
+            本周期
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span aria-hidden className="w-4 border-t-[1.5px] border-dashed border-muted-foreground" />
+            上一周期
+          </span>
+        </div>
+      )}
       <div className="flex justify-between pl-16 text-[10px] text-muted-foreground">
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
@@ -533,5 +625,33 @@ export function UsageProviderChart({
         </span>
       </div>
     </div>
+  );
+}
+
+/** 环比文字：增加橙色、减少绿色 */
+export function ChangeText({
+  current,
+  previous,
+  className,
+}: {
+  readonly current: number;
+  readonly previous: number;
+  readonly className?: string;
+}) {
+  const ratio = changeRatio(current, previous);
+  return (
+    <span
+      className={cn(
+        "tabular-nums",
+        ratio === null || Math.abs(ratio) < 0.0005
+          ? "text-muted-foreground"
+          : ratio > 0
+            ? "text-primary"
+            : "text-success-foreground",
+        className,
+      )}
+    >
+      {formatChange(current, previous)}
+    </span>
   );
 }

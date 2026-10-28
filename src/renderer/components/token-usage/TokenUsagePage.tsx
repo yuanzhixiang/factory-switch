@@ -60,7 +60,7 @@ import { formatChange } from "../../lib/token-usage/compare";
 import { ProviderMark } from "./ProviderMark";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
-import { UsageProviderChart } from "./UsageProviderChart";
+import { ChangeText, UsageProviderChart } from "./UsageProviderChart";
 import { UsageShareBar } from "./UsageShareBar";
 import {
   AlertIcon,
@@ -428,13 +428,24 @@ function UsageOverview({
       <section className="grid gap-8 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-col gap-1">
-            <span
-              className={cn(
-                "text-4xl font-semibold text-foreground tabular-nums",
-                figureClass(loadingPartial),
-              )}
-            >
-              {metric === "cost" ? formatUsd(merged.costUsd) : formatTokens(merged.totalTokens)}
+            <span className="flex items-baseline gap-3">
+              <span
+                className={cn(
+                  "text-4xl font-semibold text-foreground tabular-nums",
+                  figureClass(loadingPartial),
+                )}
+              >
+                {metric === "cost" ? formatUsd(merged.costUsd) : formatTokens(merged.totalTokens)}
+              </span>
+              {previous !== null && prior !== null ? (
+                <span className="rounded-[2px] bg-muted px-1.5 py-0.5 text-sm font-medium">
+                  <span className="text-muted-foreground">环比 </span>
+                  <ChangeText
+                    current={metric === "cost" ? merged.costUsd : merged.totalTokens}
+                    previous={metric === "cost" ? prior.costUsd : prior.totalTokens}
+                  />
+                </span>
+              ) : null}
             </span>
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <span>
@@ -459,11 +470,7 @@ function UsageOverview({
                   ? "统计中…"
                   : `${
                       metric === "cost" ? formatUsd(prior.costUsd) : formatTokens(prior.totalTokens)
-                    } · ${formatCount(prior.sessions)} 个会话 · 环比 ${
-                      metric === "cost"
-                        ? formatChange(merged.costUsd, prior.costUsd)
-                        : formatChange(merged.totalTokens, prior.totalTokens)
-                    }`}
+                    } · ${formatCount(prior.sessions)} 个会话`}
               </span>
             ) : null}
           </div>
@@ -556,6 +563,19 @@ function UsageOverview({
             resolution={shownHourly ? "hour" : "day"}
             timeZone={shownWindow.timeZone}
             hour12={HOUR12}
+            previous={
+              previous === null || prior === null
+                ? undefined
+                : {
+                    periods: shownHourly
+                      ? previous.window.sinceTime === undefined ||
+                        previous.window.untilTime === undefined
+                        ? []
+                        : enumerateHourStarts(previous.window.sinceTime, previous.window.untilTime)
+                      : enumerateDays(previous.window.sinceDay, previous.window.untilDay),
+                    totals: shownHourly ? prior.hourly : prior.daily,
+                  }
+            }
           />
         </div>
       </section>
