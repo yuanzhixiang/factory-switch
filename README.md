@@ -113,6 +113,20 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - 扫描结果缓存在 `~/.factory-switch/token-usage/usage-scan-cache-v9.json`：没变的文件不重读，变大的文件从上次位置续读，日志被删除后已统计的用量保留 92 天。首次扫描本机约 900 个日志需要几秒，之后约 0.1 秒。
 - 费用按 LiteLLM 公开价格表估算（缓存 24 小时，下载失败时改走 GitHub API，再失败用磁盘缓存），日志里自带费用的（如 Grok、Pi）优先用自带的。可以给模型设置自定义价格，存在 `~/.factory-switch/token-usage/settings.json`，修改后立即按新价格重新计算。
 
+### 订阅额度（Token 统计页的「额度」视图）
+
+移植自 T3 Code 的 Limits 页签，显示本机各家 CLI 订阅的剩余额度，顶部切换 [费用 | Tokens | 额度]，快捷键 L。
+
+- Claude：用 Claude Agent SDK 启动本机 `claude`，只做本地初始化并读 `get_usage`，不会发提示词。显示 5 小时、每周、按模型的每周额度和每月消费上限。
+- Codex：启动 `codex app-server` 用 JSON-RPC 读账号和额度（5 小时 / 每周 / 每月，按套餐），以及可用的重置次数。
+- Cursor：默认不查。在「额度来源」里打开开关后，从 macOS 钥匙串读 Cursor CLI 的登录（系统可能弹窗授权）去查本计费周期的用量；钥匙串读取失败显示「探测失败」。
+- OpenCode Go：读 OpenCode 保存的 Go / Console API Key 查 5 小时、每周、每月额度；没订阅 Go 的不显示。
+- CLIProxyAPI 来源：在「额度来源」里添加中转服务地址和管理密钥，通过它的管理接口列出 Codex / Claude 账号并查每个账号的额度和 Codex 重置次数。管理密钥只存在 `~/.factory-switch/usage-limits/settings.json`（权限 600），页面只知道有没有设置。
+- 启动后查一次，之后每 5 分钟一次，点刷新立即查；某家探测失败时保留上一次的数据。命令行工具从登录 shell 的 PATH 和 `~/.local/bin`、`/opt/homebrew/bin` 等目录里找。
+- 同一账号在本机和中转里都有时合并成一行；多个账号的同类窗口合成一个池子显示总剩余和各账号明细，并按时间进度标出用得快还是慢（和 T3 一致）。
+- 兑换重置次数：Codex（本机或中转里的账号）有可用次数时显示「兑换」按钮，二次确认后才执行，会真的消耗账号上的一次重置。本机兑换同一时间只跑一个，没拿到结果时重试沿用同一个幂等键；中转兑换按账号和那一张重置次数生成固定请求 ID，成功后清除中转的冷却。
+- 页面里的外部链接用系统浏览器打开。
+
 ### 通知
 
 只看 Standard 池的 5 小时用量，阈值 70%：
@@ -142,4 +156,6 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - 汇总页假设各账号的每周、每月额度一样大，额度不同的账号直接相加百分比会有偏差。
 - Token 统计只能看到本机现存的日志和本程序扫描过后被删除的日志；本程序开始扫描之前就删掉的日志统计不到，所以可能比 T3 Code 显示的少（T3 也只是缓存了它扫描过的已删日志）。
 - Token 统计的费用是按 API 公开价格估算，不是实际账单；订阅制（Claude Max、ChatGPT Plus 等）实际花费不按这个算。Codex 日志里没写服务档位的请求按标准档计价：T3 会去自己的数据库查它发起的会话用的档位，本程序没有这份记录。
-- Muse 的日志目录 T3 是启动 muse 程序问出来的，本程序不启动它，只读 `MUSE_HOME` 环境变量指定的目录。OpenCode、Antigravity、Cursor 的 token 统计和「额度」页签还没接入。
+- Muse 的日志目录 T3 是启动 muse 程序问出来的，本程序不启动它，只读 `MUSE_HOME` 环境变量指定的目录。OpenCode、Antigravity、Cursor 的 token 统计还没接入。
+- 额度视图没有 Antigravity 和 Muse：T3 读 Antigravity 额度用的是它自己管理的登录，Muse 额度要启动 muse 程序，本机都没有对应数据。Claude 的重置次数在 macOS 上 T3 也读不到（登录在钥匙串里），所以不显示。
+- Claude、Codex 额度用的是它们 CLI 的实验/私有接口，CLI 升级后可能读不到，显示「探测失败」并保留上次数据。窗口名称（Session、Weekly 等）沿用接口返回的英文。

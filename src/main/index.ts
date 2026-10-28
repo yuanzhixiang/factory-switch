@@ -1,7 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 import { readCursorCurrent } from "../core/cursor-current";
-import { app, BrowserWindow, ipcMain, Notification } from "electron";
+import { app, BrowserWindow, ipcMain, Notification, shell } from "electron";
 import { createDefaultEnv } from "../core/env";
 import {
   backupCurrent,
@@ -15,6 +15,7 @@ import { deleteApiKey, removeAccount, renameAccount } from "../core/vault";
 import type { OperationResult } from "../shared/types";
 import { createUsageMonitor } from "./usage-monitor";
 import { createTokenUsage } from "./token-usage";
+import { createUsageLimits } from "./usage-limits";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -42,6 +43,9 @@ const monitor = createUsageMonitor({
 });
 
 const tokenUsage = createTokenUsage(env.vaultDir);
+const usageLimits = createUsageLimits(env.vaultDir, (state) =>
+  mainWindow?.webContents.send("usage-limits", state),
+);
 /** 页面里 Token 统计页的选中值，和 AccountSidebar 的 TOKEN_USAGE_ID 一致 */
 const TOKEN_USAGE_ID = "token-usage";
 
@@ -113,6 +117,7 @@ function registerIpc(): void {
   ipcMain.handle("get-usage", () => monitor.get());
   ipcMain.handle("refresh-usage", () => monitor.refresh());
   tokenUsage.register(ipcMain);
+  usageLimits.register(ipcMain);
 }
 
 /** 创建主窗口；开发时加载 Vite dev server，打包后加载构建产物 */
@@ -136,6 +141,11 @@ function createWindow(): BrowserWindow {
   } else {
     void window.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+  // 页面里的外部链接（如各家用量页）用系统浏览器打开，不在应用里开新窗口
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
   window.on("closed", () => {
     mainWindow = null;
   });
@@ -161,6 +171,7 @@ void app.whenReady().then(() => {
   registerIpc();
   createWindow();
   monitor.start();
+  usageLimits.start();
   tokenUsage.startAlerts((title, body) => {
     const notification = new Notification({ title, body });
     // 点通知打开 Token 统计页

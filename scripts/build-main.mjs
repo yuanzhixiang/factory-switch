@@ -13,6 +13,9 @@ const shared = {
 
 await build({
   ...shared,
+  // Claude Agent SDK 用 createRequire(import.meta.url)，打成 CJS 后 import.meta 为空，换成当前文件的 URL
+  define: { "import.meta.url": "__import_meta_url" },
+  banner: { js: 'const __import_meta_url = require("node:url").pathToFileURL(__filename).href;' },
   entryPoints: ["src/main/index.ts"],
   outfile: "out/main/index.cjs",
 });

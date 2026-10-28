@@ -29,6 +29,12 @@ const api: FactorySwitchApi = {
   getTokenUsageSettings: () => ipcRenderer.invoke("get-token-usage-settings"),
   updateTokenUsageSettings: (patch) =>
     ipcRenderer.invoke("update-token-usage-settings", patch),
+  getUsageLimits: () => ipcRenderer.invoke("get-usage-limits"),
+  refreshUsageLimits: () => ipcRenderer.invoke("refresh-usage-limits"),
+  getUsageLimitsSettings: () => ipcRenderer.invoke("get-usage-limits-settings"),
+  updateUsageLimitsSettings: (patch) => ipcRenderer.invoke("update-usage-limits-settings", patch),
+  consumeResetCredit: (input) => ipcRenderer.invoke("consume-reset-credit", input),
+  onUsageLimits: (listener) => subscribe("usage-limits", listener),
   onProgress: (listener) => subscribe("progress", listener),
   onUsage: (listener) => subscribe("usage", listener),
   onSelectAccount: (listener) => subscribe("select-account", listener),

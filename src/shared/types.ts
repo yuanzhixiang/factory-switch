@@ -5,6 +5,13 @@ import type {
   UsagePricing,
   UsageSummaryInput,
 } from "./token-usage";
+import type {
+  ProviderConsumeResetCreditInput,
+  ProviderConsumeResetCreditResult,
+  UsageLimitsSettingsPatch,
+  UsageLimitsSettingsView,
+  UsageLimitsState,
+} from "./usage-limits";
 
 /** 从凭证里读出的账号身份，只含展示和比对用的信息，不含任何 token */
 export interface AccountIdentity {
@@ -115,6 +122,15 @@ export interface FactorySwitchApi {
   refreshTokenUsageRates(): Promise<UsagePricing>;
   getTokenUsageSettings(): Promise<TokenUsageSettings>;
   updateTokenUsageSettings(patch: TokenUsageSettingsPatch): Promise<TokenUsageSettings>;
+  /** 各家订阅额度的当前状态（主进程定时刷新） */
+  getUsageLimits(): Promise<UsageLimitsState>;
+  /** 立即重新查一遍额度，返回刷新后的状态 */
+  refreshUsageLimits(): Promise<UsageLimitsState>;
+  getUsageLimitsSettings(): Promise<UsageLimitsSettingsView>;
+  updateUsageLimitsSettings(patch: UsageLimitsSettingsPatch): Promise<UsageLimitsSettingsView>;
+  /** 兑换一次重置额度（会真的消耗账号上的重置次数） */
+  consumeResetCredit(input: ProviderConsumeResetCreditInput): Promise<ProviderConsumeResetCreditResult>;
+  onUsageLimits(listener: (state: UsageLimitsState) => void): () => void;
   onProgress(listener: (message: string) => void): () => void;
   onUsage(listener: (usage: UsageMap) => void): () => void;
   /** 点击系统通知时，主进程要求页面选中某个账号 */

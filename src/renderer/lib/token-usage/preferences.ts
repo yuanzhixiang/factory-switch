@@ -1,10 +1,10 @@
 // 用量页偏好（指标、时间段、隐藏的提供方），移植自 T3 Code（MIT）apps/web/src/components/usage/usagePagePreferences.ts
-// 改动：T3 用 Effect Schema 校验，这里手写校验；「额度」页签在后续批次加入，暂时只有费用和 Tokens。
+// 改动：T3 用 Effect Schema 校验，这里手写校验；默认指标是 Tokens（T3 默认是额度）。
 import { USAGE_PROVIDER_KINDS, type UsageProviderKind } from "../../../shared/token-usage";
 
 const STORAGE_KEY = "token-usage-page-preferences:v1";
 
-export const USAGE_METRICS = ["cost", "tokens"] as const;
+export const USAGE_METRICS = ["cost", "tokens", "limits"] as const;
 export type UsageMetric = (typeof USAGE_METRICS)[number];
 export const USAGE_WINDOW_DAYS = [1, 7, 30, 90] as const;
 export type UsageWindowDays = (typeof USAGE_WINDOW_DAYS)[number];

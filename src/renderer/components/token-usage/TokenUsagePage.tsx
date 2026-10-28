@@ -61,6 +61,14 @@ import { ProviderMark } from "./ProviderMark";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { ChangeText, UsageProviderChart } from "./UsageProviderChart";
+import { CursorEnableLimits, UsageLimitsSection } from "../usage-limits/UsageLimits";
+import { UsageLimitSourcesDialog } from "../usage-limits/UsageLimitSourcesDialog";
+import {
+  refreshUsageLimits,
+  refreshUsageLimitsIfStale,
+  saveUsageLimitsSettings,
+  useUsageLimitsState,
+} from "../../lib/usage-limits/store";
 import { UsageShareBar } from "./UsageShareBar";
 import {
   AlertIcon,
@@ -85,6 +93,7 @@ const HOUR12 = false;
 const METRIC_OPTIONS = [
   { value: "cost", label: "费用", shortcut: "C" },
   { value: "tokens", label: "Tokens", shortcut: "T" },
+  { value: "limits", label: "额度", shortcut: "L" },
 ] as const satisfies readonly { value: UsageMetric; label: string; shortcut: string }[];
 
 const WINDOW_OPTIONS = [
@@ -129,7 +138,14 @@ function usageLoading(
 export function TokenUsagePage() {
   const { preferences, windowSelection } = useTokenUsageState();
   const metric = preferences.metric;
+  const showingLimits = metric === "limits";
+  // 费用、Tokens 视图下图表和明细用的指标
+  const chartMetric = metric === "tokens" ? "tokens" : "cost";
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // 额度视图的「现在」只在显式刷新时前进，避免时钟跳动引起整页重绘
+  const [limitsNow, setLimitsNow] = useState(() => Date.now());
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const { limits, settings: limitsSettings } = useUsageLimitsState();
   const [priceDialog, setPriceDialog] = useState<{ readonly model?: string } | null>(null);
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const [selectedEnvironmentIds, setSelectedEnvironmentIds] =
@@ -141,7 +157,7 @@ export function TokenUsagePage() {
   const merged = shown?.merged ?? answeredUsage;
   const shownWindow = shown?.window ?? window;
   const shownHourly = shownWindow.resolution === "hour";
-  const refreshingUsage = isRefreshing;
+  const refreshingUsage = isRefreshing && !showingLimits;
   const showingKept = shown !== null && shown.window !== window;
   // 只看一家提供方时显示环比
   const compareEnabled =
@@ -153,8 +169,27 @@ export function TokenUsagePage() {
     ensureSummary(window);
   }, [window]);
 
+  const selectMetric = (nextMetric: UsageMetric) => {
+    if (nextMetric === "limits") setLimitsNow(Date.now());
+    updatePreferences({ metric: nextMetric });
+  };
+
+  // 进入额度视图时，数据较旧就自动刷新一次
+  useEffect(() => {
+    if (!showingLimits) return;
+    void refreshUsageLimitsIfStale().then(() => setLimitsNow(Date.now()));
+  }, [showingLimits]);
+
   const refreshWindow = () => {
     if (isRefreshing) return;
+    if (showingLimits) {
+      setIsRefreshing(true);
+      void refreshUsageLimits().finally(() => {
+        setLimitsNow(Date.now());
+        setIsRefreshing(false);
+      });
+      return;
+    }
     const nextWindow = advanceWindow();
     setIsRefreshing(true);
     void refreshSummary(nextWindow).finally(() => setIsRefreshing(false));
@@ -165,13 +200,17 @@ export function TokenUsagePage() {
     if (!isShortcutTarget(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
     let handled = true;
-    if (!mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "c") {
-      updatePreferences({ metric: "cost" });
-    } else if (!mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "t") {
-      updatePreferences({ metric: "tokens" });
+    const plain = !mod && !event.shiftKey && !event.altKey;
+    if (plain && event.key.toLowerCase() === "c") {
+      selectMetric("cost");
+    } else if (plain && event.key.toLowerCase() === "t") {
+      selectMetric("tokens");
+    } else if (plain && event.key.toLowerCase() === "l") {
+      selectMetric("limits");
     } else if (mod && event.shiftKey && /^Digit[1-4]$/.test(event.code)) {
+      // 额度没有时间段，快捷键吞掉但不切换
       const option = WINDOW_OPTIONS[Number(event.code.slice(5)) - 1];
-      if (option) selectWindow(option.days);
+      if (option && !showingLimits) selectWindow(option.days);
     } else {
       handled = false;
     }
@@ -218,6 +257,7 @@ export function TokenUsagePage() {
             selectedEnvironments={selectedEnvironments}
             selectedEnvironmentIds={selectedEnvironmentIds}
             onSelectionChange={setSelectedEnvironmentIds}
+            showUsageStatus={!showingLimits}
             refreshing={refreshingUsage}
             isPartial={isPartial}
             duplicateSources={merged.duplicateSources}
@@ -232,20 +272,33 @@ export function TokenUsagePage() {
             onChange={(next) => updatePreferences({ hiddenProviders: next })}
           />
         </nav>
-        <span className="hidden min-w-0 truncate text-xs text-muted-foreground xl:block">
-          {windowLabel}
-        </span>
+        {!showingLimits ? (
+          <span className="hidden min-w-0 truncate text-xs text-muted-foreground xl:block">
+            {windowLabel}
+          </span>
+        ) : null}
         <div className="ms-auto flex shrink-0 items-center gap-2">
-          <Segmented
-            ariaLabel="时间段"
-            value={windowDays}
-            options={WINDOW_OPTIONS.map((option) => ({
-              value: option.days,
-              label: option.label,
-              title: `${option.label}（${option.shortcut}）`,
-            }))}
-            onChange={selectWindow}
-          />
+          {/* 额度总是当前值，没有时间段；时间段放在指标左边，隐藏时指标位置不动 */}
+          {showingLimits ? (
+            <IconButton
+              aria-label="额度来源"
+              title="额度来源：CLIProxyAPI、Cursor 钥匙串"
+              onClick={() => setSourcesOpen(true)}
+            >
+              <SlidersIcon />
+            </IconButton>
+          ) : (
+            <Segmented
+              ariaLabel="时间段"
+              value={windowDays}
+              options={WINDOW_OPTIONS.map((option) => ({
+                value: option.days,
+                label: option.label,
+                title: `${option.label}（${option.shortcut}）`,
+              }))}
+              onChange={selectWindow}
+            />
+          )}
           <Segmented
             ariaLabel="指标"
             value={metric}
@@ -254,12 +307,12 @@ export function TokenUsagePage() {
               label: option.label,
               title: `${option.label}（${option.shortcut}）`,
             }))}
-            onChange={(value) => updatePreferences({ metric: value })}
+            onChange={selectMetric}
           />
           <IconButton
             onClick={refreshWindow}
-            aria-label="刷新用量"
-            title="重新扫描并更新价格表"
+            aria-label={showingLimits ? "刷新额度" : "刷新用量"}
+            title={showingLimits ? "重新查询各家额度" : "重新扫描并更新价格表"}
             aria-busy={isRefreshing}
             disabled={isRefreshing}
           >
@@ -271,7 +324,30 @@ export function TokenUsagePage() {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-10 py-8">
           {selectedEnvironments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">选择一个来源后查看用量。</p>
+            <p className="text-sm text-muted-foreground">
+              选择一个来源后查看{showingLimits ? "额度" : "用量"}。
+            </p>
+          ) : showingLimits ? (
+            <UsageLimitsSection
+              hiddenProviders={hiddenProviders}
+              now={limitsNow}
+              cursorPrompt={
+                !hiddenProviders.has("cursor") &&
+                limitsSettings !== null &&
+                !limitsSettings.cursorKeychainUsageEnabled &&
+                (limits?.providers.some(
+                  (provider) => provider.driver === "cursor" && provider.installed,
+                ) ??
+                  false) ? (
+                  <CursorEnableLimits
+                    onEnable={async () => {
+                      await saveUsageLimitsSettings({ cursorKeychainUsageEnabled: true });
+                      setLimitsNow(Date.now());
+                    }}
+                  />
+                ) : null
+              }
+            />
           ) : shown === null ? (
             <UsageSkeleton />
           ) : (
@@ -281,7 +357,7 @@ export function TokenUsagePage() {
               days={days}
               hours={hours}
               showingKept={showingKept}
-              metric={metric}
+              metric={chartMetric}
               selectedEnvironments={selectedEnvironments}
               hiddenProviders={hiddenProviders}
               refreshingUsage={refreshingUsage}
@@ -302,11 +378,11 @@ export function TokenUsagePage() {
           )}
         </div>
       </div>
-      {selectedModel ? (
+      {selectedModel && !showingLimits ? (
         <UsageModelDialog
           model={selectedModel}
           environments={selectedEnvironments}
-          metric={metric}
+          metric={chartMetric}
           chartWindow={{
             days,
             hours,
@@ -322,6 +398,7 @@ export function TokenUsagePage() {
           onClose={() => setSelectedModelKey(null)}
         />
       ) : null}
+      {sourcesOpen ? <UsageLimitSourcesDialog onClose={() => setSourcesOpen(false)} /> : null}
       {priceDialog ? (
         <UsagePriceOverrides
           usage={environments}
@@ -355,7 +432,7 @@ function UsageOverview({
   readonly days: readonly string[];
   readonly hours: readonly string[];
   readonly showingKept: boolean;
-  readonly metric: UsageMetric;
+  readonly metric: "cost" | "tokens";
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly refreshingUsage: boolean;
@@ -901,6 +978,7 @@ function UsageEnvironmentFilter({
   selectedEnvironments,
   selectedEnvironmentIds,
   onSelectionChange,
+  showUsageStatus,
   refreshing,
   isPartial,
   duplicateSources,
@@ -911,6 +989,8 @@ function UsageEnvironmentFilter({
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly selectedEnvironmentIds: ReadonlySet<string> | null;
   readonly onSelectionChange: (ids: ReadonlySet<string> | null) => void;
+  /** 额度视图下不显示扫描状态和合计提示 */
+  readonly showUsageStatus: boolean;
   readonly refreshing: boolean;
   readonly isPartial: boolean;
   readonly duplicateSources: readonly string[];
@@ -924,8 +1004,9 @@ function UsageEnvironmentFilter({
       ? selectedEnvironments[0]!.label
       : `${selectedEnvironments.length} 个来源`;
   const hasIssue =
-    selectedEnvironments.some((environment) => environment.error !== null) ||
-    contractMismatches.length > 0;
+    showUsageStatus &&
+    (selectedEnvironments.some((environment) => environment.error !== null) ||
+      contractMismatches.length > 0);
 
   return (
     <Dropdown
@@ -987,26 +1068,30 @@ function UsageEnvironmentFilter({
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <span className="min-w-0 flex-1 truncate">{environment.label}</span>
-                  <span
-                    className={cn(
-                      "shrink-0 text-muted-foreground",
-                      environment.error !== null && "text-destructive-foreground",
-                    )}
-                  >
-                    {status}
-                  </span>
+                  {showUsageStatus ? (
+                    <span
+                      className={cn(
+                        "shrink-0 text-muted-foreground",
+                        environment.error !== null && "text-destructive-foreground",
+                      )}
+                    >
+                      {status}
+                    </span>
+                  ) : null}
                 </span>
               </MenuCheckboxItem>
             );
           })}
-          {isPartial ? (
+          {showUsageStatus && isPartial ? (
             <p className="px-2 py-2 text-muted-foreground">所选来源还在扫描，合计暂不完整。</p>
           ) : null}
-          <UsageCoverageNotice
-            environments={selectedEnvironments}
-            duplicateSources={duplicateSources}
-            contractMismatches={contractMismatches}
-          />
+          {showUsageStatus ? (
+            <UsageCoverageNotice
+              environments={selectedEnvironments}
+              duplicateSources={duplicateSources}
+              contractMismatches={contractMismatches}
+            />
+          ) : null}
           <MenuSeparator />
           <MenuItem
             onClick={() => {
