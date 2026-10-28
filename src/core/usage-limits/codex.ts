@@ -239,6 +239,18 @@ export async function probeCodex(now: () => Date = () => new Date()): Promise<Li
   const { server, userAgent } = started;
   try {
     const version = /\/([^\s]+)/.exec(userAgent)?.[1];
+    // 额度请求和账号请求同时发出：冷启动时账号请求本身就要几秒，不能占用额度请求的 3 秒
+    const rateLimitsRequest = server
+      .request<CodexRateLimitsResponse | null>(
+        "account/rateLimits/read",
+        null,
+        RATE_LIMITS_PROBE_TIMEOUT_MS + CODEX_AUTH_PROBE_TIMEOUT_MS,
+      )
+      .then(
+        (response): { response: CodexRateLimitsResponse } | { failure: string } =>
+          response ? { response } : { failure: "Codex 没有回应额度请求。" },
+        (error: unknown) => ({ failure: rateLimitsFailureMessage(error) }),
+      );
     const account = await server.request<CodexAccountResponse>(
       "account/read",
       {},
@@ -255,18 +267,16 @@ export async function probeCodex(now: () => Date = () => new Date()): Promise<Li
         checkedAt,
       };
     }
-    // 额度只是附加信息：失败或太慢就当这次没有额度数据，不影响账号结果
-    const rateLimits = await server
-      .request<CodexRateLimitsResponse | null>(
-        "account/rateLimits/read",
-        null,
-        RATE_LIMITS_PROBE_TIMEOUT_MS,
-      )
-      .then(
-        (response): { response: CodexRateLimitsResponse } | { failure: string } =>
-          response ? { response } : { failure: "Codex 没有回应额度请求。" },
-        (error: unknown) => ({ failure: rateLimitsFailureMessage(error) }),
-      );
+    // 额度只是附加信息：账号读完后最多再等 3 秒，失败或太慢就当这次没有额度数据，不影响账号结果
+    const rateLimits = await Promise.race([
+      rateLimitsRequest,
+      new Promise<{ failure: string }>((resolve) =>
+        setTimeout(
+          () => resolve({ failure: "Codex 没有回应额度请求。" }),
+          RATE_LIMITS_PROBE_TIMEOUT_MS,
+        ).unref(),
+      ),
+    ]);
     const authLabel = codexAccountAuthLabel(account.account);
     const email = account.account?.type === "chatgpt" ? account.account.email : undefined;
     const workspaceId =
