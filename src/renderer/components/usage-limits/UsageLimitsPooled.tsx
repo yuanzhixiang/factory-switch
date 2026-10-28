@@ -167,9 +167,9 @@ function SegmentPopover({
   const timeLeft = paceRemainingPercent(window, now);
   const resetsIn = resetsInDuration(window, now);
   const where =
-    account.environments.length > 0
-      ? account.environments.map((environment) => environment.label).join("、")
-      : account.sourceLabel;
+    [...account.environments.map((environment) => environment.label), account.sourceLabel]
+      .filter((label): label is string => Boolean(label))
+      .join(" + ") || null;
   const credits =
     redeem && account.limits.resetCredits?.availableCount ? account.limits.resetCredits : null;
   return (
@@ -183,7 +183,7 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border pt-2.5">
         {account.plan ? <Row label="套餐">{account.plan}</Row> : null}
-        {where ? <Row label={account.environments.length > 0 ? "登录于" : "来自"}>{where}</Row> : null}
+        {where ? <Row label="来源">{where}</Row> : null}
       </div>
       <div className="flex flex-col gap-1 border-t border-border pt-2.5">
         <Row label="剩余">{remaining}%</Row>

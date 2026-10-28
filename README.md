@@ -108,7 +108,8 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - 点提供方列表里的某一行只看这一家（Claude Code、Codex 等），再点一次恢复全部；和「全部提供方」菜单是同一个筛选，会记住。
 - 只看一家提供方时显示环比：和紧挨在前面、等长的上一周期比较（7 天比前 7 天，24 小时比前 24 小时，30/90 天同理）。总数旁边显示环比徽标（增加橙色、减少绿色），下面显示上一周期的日期、用量和会话数；每日曲线上用灰色虚线叠加上一周期（按位置对齐），悬停时提示框显示上一周期对应那天的用量和环比；「合计」里每项下面显示环比；费用视图按费用比较。上一周期没有用量时显示「上一周期无用量」。当前周期包含今天，今天还没过完，所以环比会偏低。
 - Claude Code 当天用量提醒：启动时和之后每 5 分钟查一次今天（本地时区）Claude Code 的 token 合计，超过 1B、2B 各发一次系统通知，一次跨过两个只通知高的那个；第二天重新计。已通知记录存在 `~/.factory-switch/token-usage/claude-daily-alert.json`，重启不会重复通知。点通知打开 Token 统计页。其他提供方不通知。
-- 数据来源（只读）：Claude Code `~/.claude/projects`（或 `CLAUDE_CONFIG_DIR`）、Codex `~/.codex/sessions`（或 `CODEX_HOME`）、Grok Build `~/.grok/sessions/*/updates.jsonl`（或 `GROK_HOME`）、Pi `~/.pi/agent/sessions`（或 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`）、Muse `$MUSE_HOME/sessions/*/session.jsonl`。目录不存在的显示「本机没有这个日志目录」。
+- 数据来源（只读）：Claude Code `~/.claude/projects`（或 `CLAUDE_CONFIG_DIR`）、Codex `~/.codex/sessions`（或 `CODEX_HOME`）、Grok Build `~/.grok/sessions/*/updates.jsonl`（或 `GROK_HOME`）、Pi `~/.pi/agent/sessions`（或 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`）、OpenCode `~/.local/share/opencode` 下的 `opencode*.db` 和旧版 `storage/message`（或 `OPENCODE_DATA_DIR` / `XDG_DATA_HOME`）、Muse `$MUSE_HOME/sessions/*/session.jsonl`、Antigravity `~/.gemini/antigravity*` 与 `~/.config/antigravity` 下会话目录里的 `.db`（或 `ANTIGRAVITY_DATA_DIR`，解析其中的 protobuf 元数据）。目录不存在的显示「本机没有这个日志目录」。
+- Cursor 本机没有日志：开启「允许读取 Cursor 钥匙串登录」后（和额度页是同一个开关，提供方列表里也有「开启」按钮），用 Cursor CLI 的登录向 cursor.com 后台拉账号的计费明细（每页 1000 条，最多提前并发 6 页，处理分页边界重叠），费用用后台报的金额。按账号缓存在 `~/.factory-switch/token-usage/usage-cursor-account-cache-v1.json`，之后只增量拉取最近一段；1 分钟内不重复拉，后台拉取时先显示缓存。换了 Cursor 账号会丢弃旧账号缓存。
 - 按 T3 的规则解析和去重：Claude 同一条消息的多个内容块只算一次，恢复/分叉会话复制过来的记录按 `messageId:requestId` 去重；Codex 用累计计数校验每次请求的增量，分叉会话复制的父会话历史不计入，移动过的日志跨文件去重。
 - 扫描结果缓存在 `~/.factory-switch/token-usage/usage-scan-cache-v9.json`：没变的文件不重读，变大的文件从上次位置续读，日志被删除后已统计的用量保留 92 天。首次扫描本机约 900 个日志需要几秒，之后约 0.1 秒。
 - 费用按 LiteLLM 公开价格表估算（缓存 24 小时，下载失败时改走 GitHub API，再失败用磁盘缓存），日志里自带费用的（如 Grok、Pi）优先用自带的。可以给模型设置自定义价格，存在 `~/.factory-switch/token-usage/settings.json`，修改后立即按新价格重新计算。
@@ -156,6 +157,8 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - 汇总页假设各账号的每周、每月额度一样大，额度不同的账号直接相加百分比会有偏差。
 - Token 统计只能看到本机现存的日志和本程序扫描过后被删除的日志；本程序开始扫描之前就删掉的日志统计不到，所以可能比 T3 Code 显示的少（T3 也只是缓存了它扫描过的已删日志）。
 - Token 统计的费用是按 API 公开价格估算，不是实际账单；订阅制（Claude Max、ChatGPT Plus 等）实际花费不按这个算。Codex 日志里没写服务档位的请求按标准档计价：T3 会去自己的数据库查它发起的会话用的档位，本程序没有这份记录。
-- Muse 的日志目录 T3 是启动 muse 程序问出来的，本程序不启动它，只读 `MUSE_HOME` 环境变量指定的目录。OpenCode、Antigravity、Cursor 的 token 统计还没接入。
+- Muse 的日志目录 T3 是启动 muse 程序问出来的，本程序不启动它，只读 `MUSE_HOME` 环境变量指定的目录。
+- Antigravity 只统计 CLI / ACP 会话库（`.db`）；Antigravity IDE 自己存的 `.pb` 会话不统计（T3 也不统计）。T3 还会读它自己管理的 Antigravity 登录目录，本程序没有。
+- Cursor 的 token 统计依赖 cursor.com 后台的非公开接口，接口变化后会显示「Cursor 账号用量读取失败」。
 - 额度视图没有 Antigravity 和 Muse：T3 读 Antigravity 额度用的是它自己管理的登录，Muse 额度要启动 muse 程序，本机都没有对应数据。Claude 的重置次数在 macOS 上 T3 也读不到（登录在钥匙串里），所以不显示。
 - Claude、Codex 额度用的是它们 CLI 的实验/私有接口，CLI 升级后可能读不到，显示「探测失败」并保留上次数据。窗口名称（Session、Weekly 等）沿用接口返回的英文。

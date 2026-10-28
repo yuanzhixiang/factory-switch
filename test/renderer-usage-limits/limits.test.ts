@@ -110,7 +110,8 @@ describe("pools", () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]).toMatchObject({
       key: "env-a:claude",
-      sourceLabel: null,
+      // 和 T3 不同：本机也登录时保留中转来源，页面显示「本机 + 中转」
+      sourceLabel: "Desktop · hub",
       redeem: { environmentId: "env-b", input: { instanceId: "claude" } },
       environments: [
         { environmentId: "env-a", label: "Laptop" },

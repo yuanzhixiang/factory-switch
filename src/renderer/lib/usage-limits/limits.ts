@@ -215,7 +215,8 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       plan: previous.plan ?? next.plan,
       accentColor: previous.accentColor ?? next.accentColor,
       environments,
-      sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
+      // 和 T3 不同：本机也登录时仍保留中转来源，页面显示「本机 + CPA」，便于确认中转已接上
+      sourceLabel: previous.sourceLabel ?? next.sourceLabel,
       redeem:
         hubRedeems.get(key)?.redeem ??
         (creditSource ? creditSource.redeem : (winner.redeem ?? previous.redeem ?? next.redeem)),

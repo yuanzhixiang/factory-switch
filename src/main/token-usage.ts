@@ -10,6 +10,7 @@ import {
 } from "../core/token-usage/alerts";
 import { createUsageService, UsageReadError } from "../core/token-usage/service";
 import { createTokenUsageSettingsStore } from "../core/token-usage/settings";
+import { createUsageLimitsSettingsStore } from "../core/usage-limits/settings";
 import type {
   TokenUsageResult,
   TokenUsageSettingsPatch,
@@ -23,9 +24,18 @@ const ALERT_INTERVAL_MS = 5 * 60 * 1000;
 export function createTokenUsage(vaultDir: string) {
   const stateDir = path.join(vaultDir, "token-usage");
   const settings = createTokenUsageSettingsStore(stateDir);
+  const usageLimitsSettings = createUsageLimitsSettingsStore(path.join(vaultDir, "usage-limits"));
   const service = createUsageService({
     stateDir,
-    readerEnv: { homeDir: os.homedir(), environment: process.env },
+    readerEnv: {
+      homeDir: os.homedir(),
+      environment: process.env,
+      stateDir,
+      httpFetch: (input, init) => fetch(input, init),
+      // 和额度页共用「允许读取 Cursor 钥匙串登录」开关
+      cursorKeychainUsageEnabled: async () =>
+        (await usageLimitsSettings.read()).cursorKeychainUsageEnabled,
+    },
     readSettings: settings.read,
     httpFetch: (input, init) => fetch(input, init),
   });

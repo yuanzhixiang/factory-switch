@@ -67,7 +67,7 @@ const KEYCHAIN_ITEM_NOT_FOUND = 44;
  * 读钥匙串里 Cursor CLI 的 access token；结果缓存 5 分钟，并发读取共用一次。
  * 没有条目返回 null，其他失败（拒绝授权、超时）抛错。
  */
-function readKeychainToken(): Promise<string | null> {
+export function readKeychainToken(): Promise<string | null> {
   if (keychainCache && keychainCache.untilMs > Date.now()) {
     return Promise.resolve(keychainCache.token);
   }

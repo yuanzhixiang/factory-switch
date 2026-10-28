@@ -163,6 +163,18 @@ export function TokenUsagePage() {
   const compareEnabled =
     PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider)).length === 1;
   const previous = usePreviousUsage(shownWindow, hiddenProviders, compareEnabled);
+  // 对应 T3 的 cursorKeychainAccessEnvironments：还没开启钥匙串读取、也没有 Cursor 账号数据时提示开启
+  const cursorNeedsKeychain =
+    !hiddenProviders.has("cursor") &&
+    !selectedEnvironments.some((environment) =>
+      environment.summary?.sources.some(
+        (source) =>
+          source.fingerprint.provider === "cursor" && source.fingerprint.hostId === "cursor.com",
+      ),
+    ) &&
+    selectedEnvironments.some((environment) =>
+      environment.summary?.sources.some((source) => source.action === "enableCursorKeychain"),
+    );
 
   // 窗口变化时取数据；60 秒内的结果直接复用
   useEffect(() => {
@@ -363,6 +375,14 @@ export function TokenUsagePage() {
               refreshingUsage={refreshingUsage}
               onSelectModel={setSelectedModelKey}
               previous={compareEnabled ? previous : null}
+              onEnableCursor={
+                cursorNeedsKeychain
+                  ? async () => {
+                      await saveUsageLimitsSettings({ cursorKeychainUsageEnabled: true });
+                      await refreshSummary(window);
+                    }
+                  : null
+              }
               onSelectProvider={(provider) => {
                 const onlyThis = PROVIDER_ORDER.every(
                   (entry) => (entry === provider) !== hiddenProviders.has(entry),
@@ -426,6 +446,7 @@ function UsageOverview({
   onSelectModel,
   onSelectProvider,
   previous,
+  onEnableCursor,
 }: {
   readonly merged: MergedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -438,6 +459,8 @@ function UsageOverview({
   readonly refreshingUsage: boolean;
   readonly onSelectModel: (key: string) => void;
   readonly onSelectProvider: (provider: UsageProviderKind) => void;
+  /** 需要开启 Cursor 钥匙串读取时提供，在提供方列表里显示开启行 */
+  readonly onEnableCursor: (() => Promise<void>) | null;
   /** 上一周期，用于环比；null 表示不显示环比 */
   readonly previous: {
     readonly window: UsageSummaryInput;
@@ -463,12 +486,21 @@ function UsageOverview({
   const chartLoadingProviders = new Set(
     activeProviders.filter((provider) => loadingProviders.has(provider)),
   );
+  // 对应 T3：Cursor 开启行插在 Claude、Codex 之后
+  const cursorInsertAt =
+    Math.max(activeProviders.indexOf("codex"), activeProviders.indexOf("claude")) + 1;
+  const summaryRows: ReadonlyArray<UsageProviderKind | "enableCursor"> = [
+    ...activeProviders.slice(0, cursorInsertAt),
+    ...(onEnableCursor ? (["enableCursor"] as const) : []),
+    ...activeProviders.slice(cursorInsertAt),
+  ];
   const sourceMessages = [
     ...new Set(
       selectedEnvironments.flatMap(
         (environment) =>
           environment.summary?.sources.flatMap((source) =>
             source.message &&
+            !source.action &&
             !hiddenProviders.has(source.fingerprint.provider) &&
             (source.status === "partial" ||
               source.status === "failed" ||
@@ -552,7 +584,13 @@ function UsageOverview({
             ) : null}
           </div>
 
-          {activeProviders.map((provider) => {
+          {summaryRows.map((row) => {
+            if (row === "enableCursor") {
+              return onEnableCursor ? (
+                <CursorEnableRow key="enable-cursor" onEnable={onEnableCursor} />
+              ) : null;
+            }
+            const provider = row;
             const totals = merged.providers.find((entry) => entry.provider === provider);
             const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
             const providerSessions = totals?.sessions ?? 0;
@@ -897,6 +935,42 @@ function UsageOverview({
 
 function figureClass(loading: boolean) {
   return cn("transition-opacity", loading && "opacity-40 delay-150");
+}
+
+const CURSOR_KEYCHAIN_COPY = "需要读取 macOS 钥匙串里的 Cursor 登录，系统可能会弹窗请求授权。";
+
+/** 提供方列表里的 Cursor 开启行，移植自 T3 的 CursorEnableRow */
+function CursorEnableRow({ onEnable }: { readonly onEnable: () => Promise<void> }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+          <span
+            aria-hidden
+            className="size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: PROVIDER_PRESENTATION.cursor.color }}
+          />
+          <ProviderMark provider="cursor" className="size-4" />
+          <span className="truncate">{PROVIDER_PRESENTATION.cursor.label}</span>
+        </span>
+        <button
+          type="button"
+          disabled={pending}
+          aria-busy={pending}
+          aria-label="开启 Cursor 账号用量"
+          onClick={() => {
+            setPending(true);
+            void onEnable().finally(() => setPending(false));
+          }}
+          className="shrink-0 text-xs text-primary hover:text-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {pending ? "开启中…" : "开启"}
+        </button>
+      </div>
+      <span className="text-xs text-muted-foreground">{CURSOR_KEYCHAIN_COPY}</span>
+    </div>
+  );
 }
 
 function Metric({

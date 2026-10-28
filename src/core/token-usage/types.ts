@@ -99,6 +99,13 @@ export interface ProviderUsageScanInput {
 export interface UsageReaderEnv {
   readonly homeDir: string;
   readonly environment: NodeJS.ProcessEnv;
+  /** 读取器自己的缓存目录（Cursor 账号历史） */
+  readonly stateDir?: string;
+  /** 是否允许读 macOS 钥匙串里的 Cursor 登录，和额度页的开关共用 */
+  readonly cursorKeychainUsageEnabled?: () => Promise<boolean>;
+  readonly httpFetch?: typeof fetch;
+  /** 测试时替换钥匙串读取 */
+  readonly readCursorKeychain?: () => Promise<string | null>;
 }
 
 export type ProviderUsageReader =
