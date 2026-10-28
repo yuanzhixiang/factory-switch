@@ -50,11 +50,13 @@ import {
   selectWindow,
   updatePreferences,
   useHiddenProviders,
+  usePreviousUsage,
   useTokenUsageState,
   useUsage,
   type EnvironmentUsageStatus,
 } from "../../lib/token-usage/store";
 import { USAGE_CONTRACT_VERSION } from "../../../shared/token-usage";
+import { formatChange } from "../../lib/token-usage/compare";
 import { ProviderMark } from "./ProviderMark";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
@@ -141,6 +143,10 @@ export function TokenUsagePage() {
   const shownHourly = shownWindow.resolution === "hour";
   const refreshingUsage = isRefreshing;
   const showingKept = shown !== null && shown.window !== window;
+  // 只看一家提供方时显示环比
+  const compareEnabled =
+    PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider)).length === 1;
+  const previous = usePreviousUsage(shownWindow, hiddenProviders, compareEnabled);
 
   // 窗口变化时取数据；60 秒内的结果直接复用
   useEffect(() => {
@@ -280,6 +286,7 @@ export function TokenUsagePage() {
               hiddenProviders={hiddenProviders}
               refreshingUsage={refreshingUsage}
               onSelectModel={setSelectedModelKey}
+              previous={compareEnabled ? previous : null}
               onSelectProvider={(provider) => {
                 const onlyThis = PROVIDER_ORDER.every(
                   (entry) => (entry === provider) !== hiddenProviders.has(entry),
@@ -341,6 +348,7 @@ function UsageOverview({
   refreshingUsage,
   onSelectModel,
   onSelectProvider,
+  previous,
 }: {
   readonly merged: MergedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -353,7 +361,16 @@ function UsageOverview({
   readonly refreshingUsage: boolean;
   readonly onSelectModel: (key: string) => void;
   readonly onSelectProvider: (provider: UsageProviderKind) => void;
+  /** 上一周期，用于环比；null 表示不显示环比 */
+  readonly previous: {
+    readonly window: UsageSummaryInput;
+    readonly merged: MergedUsage | null;
+  } | null;
 }) {
+  const prior = previous?.merged ?? null;
+  // 上一周期还没查到时先占位，不显示数字
+  const changeOf = (current: number, pick: (usage: MergedUsage) => number) =>
+    previous === null ? undefined : prior === null ? "…" : formatChange(current, pick(prior));
   const onlyProvider = PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider));
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
@@ -435,6 +452,20 @@ function UsageOverview({
                 </HoverTip>
               )}
             </span>
+            {previous !== null ? (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {`上一周期（${formatWindowRange(previous.window)}）：`}
+                {prior === null
+                  ? "统计中…"
+                  : `${
+                      metric === "cost" ? formatUsd(prior.costUsd) : formatTokens(prior.totalTokens)
+                    } · ${formatCount(prior.sessions)} 个会话 · 环比 ${
+                      metric === "cost"
+                        ? formatChange(merged.costUsd, prior.costUsd)
+                        : formatChange(merged.totalTokens, prior.totalTokens)
+                    }`}
+              </span>
+            ) : null}
           </div>
 
           {activeProviders.map((provider) => {
@@ -532,18 +563,38 @@ function UsageOverview({
       <section className="flex flex-col gap-3">
         <h2 className="text-sm text-foreground">合计</h2>
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
-          <Metric loading={loadingPartial} label="处理的 token" value={formatTokens(merged.totalTokens)} />
-          <Metric loading={loadingPartial} label="缓存输入" value={formatTokens(merged.cachedInputTokens)} />
+          <Metric
+            loading={loadingPartial}
+            label="处理的 token"
+            value={formatTokens(merged.totalTokens)}
+            change={changeOf(merged.totalTokens, (usage) => usage.totalTokens)}
+          />
+          <Metric
+            loading={loadingPartial}
+            label="缓存输入"
+            value={formatTokens(merged.cachedInputTokens)}
+            change={changeOf(merged.cachedInputTokens, (usage) => usage.cachedInputTokens)}
+          />
           <Metric
             loading={loadingPartial}
             label="未缓存输入"
             value={formatTokens(merged.uncachedInputTokens)}
+            change={changeOf(merged.uncachedInputTokens, (usage) => usage.uncachedInputTokens)}
           />
-          <Metric loading={loadingPartial} label="输出" value={formatTokens(merged.outputTokens)} />
+          <Metric
+            loading={loadingPartial}
+            label="输出"
+            value={formatTokens(merged.outputTokens)}
+            change={changeOf(merged.outputTokens, (usage) => usage.outputTokens)}
+          />
           <Metric
             loading={loadingPartial}
             label="缓存节省"
             value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+            change={changeOf(
+              merged.costQuality.cacheSavingsUsd,
+              (usage) => usage.costQuality.cacheSavingsUsd,
+            )}
           />
         </div>
       </section>
@@ -755,10 +806,13 @@ function Metric({
   label,
   value,
   loading,
+  change,
 }: {
   readonly label: string;
   readonly value: string;
   readonly loading: boolean;
+  /** 环比文字，不传则不显示 */
+  readonly change?: string | undefined;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -766,8 +820,20 @@ function Metric({
       <span className={cn("text-base font-medium text-foreground tabular-nums", figureClass(loading))}>
         {value}
       </span>
+      {change !== undefined ? (
+        <span className="text-[11px] text-muted-foreground tabular-nums">环比 {change}</span>
+      ) : null}
     </div>
   );
+}
+
+/** 「10月15日 至 10月21日」或 24 小时窗口的起止时间 */
+function formatWindowRange(window: UsageSummaryInput): string {
+  return window.resolution === "hour" &&
+    window.sinceTime !== undefined &&
+    window.untilTime !== undefined
+    ? `${formatDateTimeShort(window.sinceTime, window.timeZone, HOUR12)} 至 ${formatDateTimeShort(window.untilTime, window.timeZone, HOUR12)}`
+    : `${formatDayShort(window.sinceDay)} 至 ${formatDayShort(window.untilDay)}`;
 }
 
 function UsageCoverageNotice({

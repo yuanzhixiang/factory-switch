@@ -12,6 +12,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
 } from "../../../shared/token-usage";
+import { previousWindow } from "./compare";
 import { makeWindow } from "./format";
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "./merge";
 import {
@@ -372,4 +373,30 @@ export function useTokenUsageTotal(): { readonly totalTokens: number | null; rea
     [entry, hiddenProviders],
   );
   return { totalTokens, loading: entry === undefined || entry.pending };
+}
+
+/**
+ * 环比用的上一周期结果：只在 enabled 时取数，结果同样缓存 60 秒；
+ * 价格设置变化清空缓存后会自动重取。还没有结果时 merged 为 null。
+ */
+export function usePreviousUsage(
+  input: UsageSummaryInput,
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+  enabled: boolean,
+): { readonly window: UsageSummaryInput; readonly merged: MergedUsage | null } {
+  const previous = useMemo(() => previousWindow(input), [input]);
+  const { entries } = useTokenUsageState();
+  const entry = entries.get(windowKey(previous));
+  const missing = entry === undefined;
+  useEffect(() => {
+    if (enabled && missing) ensureSummary(previous);
+  }, [enabled, missing, previous]);
+  const merged = useMemo(
+    () =>
+      enabled && entry?.summary
+        ? mergeAnsweredUsage(withoutProviders([localEnvironmentFrom(entry)], hiddenProviders))
+        : null,
+    [enabled, entry, hiddenProviders],
+  );
+  return { window: previous, merged };
 }
