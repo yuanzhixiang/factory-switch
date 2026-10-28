@@ -280,6 +280,17 @@ export function TokenUsagePage() {
               hiddenProviders={hiddenProviders}
               refreshingUsage={refreshingUsage}
               onSelectModel={setSelectedModelKey}
+              onSelectProvider={(provider) => {
+                const onlyThis = PROVIDER_ORDER.every(
+                  (entry) => (entry === provider) !== hiddenProviders.has(entry),
+                );
+                // 点一家只看这一家；已经只看这一家时再点恢复全部
+                updatePreferences({
+                  hiddenProviders: onlyThis
+                    ? []
+                    : PROVIDER_ORDER.filter((entry) => entry !== provider),
+                });
+              }}
             />
           )}
         </div>
@@ -329,6 +340,7 @@ function UsageOverview({
   hiddenProviders,
   refreshingUsage,
   onSelectModel,
+  onSelectProvider,
 }: {
   readonly merged: MergedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -340,7 +352,9 @@ function UsageOverview({
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly refreshingUsage: boolean;
   readonly onSelectModel: (key: string) => void;
+  readonly onSelectProvider: (provider: UsageProviderKind) => void;
 }) {
+  const onlyProvider = PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider));
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
   const loading = usageLoading(showingKept, selectedEnvironments, refreshingUsage, hiddenProviders);
@@ -430,8 +444,18 @@ function UsageOverview({
             const providerLoading = loadingProviders.has(provider);
             const awaitingData = providerLoading && !providersWithData.has(provider);
             return (
-              <div key={provider} className="flex flex-col gap-1">
-                <div className="flex items-baseline justify-between gap-4">
+              <button
+                key={provider}
+                type="button"
+                onClick={() => onSelectProvider(provider)}
+                title={
+                  onlyProvider.length === 1 && onlyProvider[0] === provider
+                    ? "显示全部提供方"
+                    : `只看 ${PROVIDER_PRESENTATION[provider].label}`
+                }
+                className="-mx-2 flex flex-col gap-1 rounded-[2px] px-2 py-1 text-left transition-colors hover:bg-muted"
+              >
+                <div className="flex w-full items-baseline justify-between gap-4">
                   <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
                     <span
                       aria-hidden
@@ -476,7 +500,7 @@ function UsageOverview({
                     ? `占费用 ${formatPercent(share)} · ${formatTokens(totals?.totalTokens ?? 0)} token`
                     : `占 token ${formatPercent(share)} · ${formatUsd(totals?.costUsd ?? 0)}`}
                 </span>
-              </div>
+              </button>
             );
           })}
           {activeProviders.length === 0 ? (

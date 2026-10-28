@@ -42,6 +42,8 @@ const monitor = createUsageMonitor({
 });
 
 const tokenUsage = createTokenUsage(env.vaultDir);
+/** 页面里 Token 统计页的选中值，和 AccountSidebar 的 TOKEN_USAGE_ID 一致 */
+const TOKEN_USAGE_ID = "token-usage";
 
 /** 串行执行一个操作，统一转成界面能展示的结果；成功后顺手刷新用量 */
 async function runOperation(
@@ -159,6 +161,12 @@ void app.whenReady().then(() => {
   registerIpc();
   createWindow();
   monitor.start();
+  tokenUsage.startAlerts((title, body) => {
+    const notification = new Notification({ title, body });
+    // 点通知打开 Token 统计页
+    notification.on("click", () => showAndSelect(TOKEN_USAGE_ID));
+    notification.show();
+  });
   // macOS 点 Dock 图标时窗口已关就重新开一个
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

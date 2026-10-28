@@ -105,6 +105,8 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 移植自 [T3 Code](https://github.com/pingdotgg/t3code)（MIT）的用量页面，统计本机各家 AI 编程 CLI 的 token 用量和按 API 价折算的费用，和 Factory 账号无关。
 
 - 入口：Factory 页面侧边栏「全部账号」下面的「Token 统计」，右边显示当前时间段的总 token。页面布局照搬 T3：时间段（24 小时 / 7 天 / 30 天 / 90 天）、费用 / Tokens 视图、按提供方筛选、每日曲线、合计、按类型占比、按模型或日期的明细，点模型看详情；「全部来源」菜单里有扫描状态和自定义模型价格。快捷键：C 费用、T Tokens、⌘⇧1~4 切换时间段。结果缓存 60 秒，刷新按钮会重新下载价格表并重扫。
+- 点提供方列表里的某一行只看这一家（Claude Code、Codex 等），再点一次恢复全部；和「全部提供方」菜单是同一个筛选，会记住。
+- Claude Code 当天用量提醒：启动时和之后每 5 分钟查一次今天（本地时区）Claude Code 的 token 合计，超过 1B、2B 各发一次系统通知，一次跨过两个只通知高的那个；第二天重新计。已通知记录存在 `~/.factory-switch/token-usage/claude-daily-alert.json`，重启不会重复通知。点通知打开 Token 统计页。其他提供方不通知。
 - 数据来源（只读）：Claude Code `~/.claude/projects`（或 `CLAUDE_CONFIG_DIR`）、Codex `~/.codex/sessions`（或 `CODEX_HOME`）、Grok Build `~/.grok/sessions/*/updates.jsonl`（或 `GROK_HOME`）、Pi `~/.pi/agent/sessions`（或 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`）、Muse `$MUSE_HOME/sessions/*/session.jsonl`。目录不存在的显示「本机没有这个日志目录」。
 - 按 T3 的规则解析和去重：Claude 同一条消息的多个内容块只算一次，恢复/分叉会话复制过来的记录按 `messageId:requestId` 去重；Codex 用累计计数校验每次请求的增量，分叉会话复制的父会话历史不计入，移动过的日志跨文件去重。
 - 扫描结果缓存在 `~/.factory-switch/token-usage/usage-scan-cache-v9.json`：没变的文件不重读，变大的文件从上次位置续读，日志被删除后已统计的用量保留 92 天。首次扫描本机约 900 个日志需要几秒，之后约 0.1 秒。
