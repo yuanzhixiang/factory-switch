@@ -100,6 +100,16 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
   - 下方明细表列出各账号三个周期的用量，点击一行跳到该账号详情；行尾当前账号显示「当前登录」，其他已备份账号有「切换」按钮，确认后和详情页的「切换到此账号」走同一流程，操作进行中按钮不可点。没查到用量的账号显示「—」，不计入合计。
 - API Key 保存前会先查一次用量，查不到就不保存，弹窗保留并显示原因。Key 以 `fk-` 开头，存在账号目录的 `api-key` 文件（权限 600），页面只拿到末四位。
 
+### Token 统计
+
+移植自 [T3 Code](https://github.com/pingdotgg/t3code)（MIT）的用量页面，统计本机各家 AI 编程 CLI 的 token 用量和按 API 价折算的费用，和 Factory 账号无关。
+
+- 入口：Factory 页面侧边栏「全部账号」下面的「Token 统计」，右边显示当前时间段的总 token。页面布局照搬 T3：时间段（24 小时 / 7 天 / 30 天 / 90 天）、费用 / Tokens 视图、按提供方筛选、每日曲线、合计、按类型占比、按模型或日期的明细，点模型看详情；「全部来源」菜单里有扫描状态和自定义模型价格。快捷键：C 费用、T Tokens、⌘⇧1~4 切换时间段。结果缓存 60 秒，刷新按钮会重新下载价格表并重扫。
+- 数据来源（只读）：Claude Code `~/.claude/projects`（或 `CLAUDE_CONFIG_DIR`）、Codex `~/.codex/sessions`（或 `CODEX_HOME`）、Grok Build `~/.grok/sessions/*/updates.jsonl`（或 `GROK_HOME`）、Pi `~/.pi/agent/sessions`（或 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`）、Muse `$MUSE_HOME/sessions/*/session.jsonl`。目录不存在的显示「本机没有这个日志目录」。
+- 按 T3 的规则解析和去重：Claude 同一条消息的多个内容块只算一次，恢复/分叉会话复制过来的记录按 `messageId:requestId` 去重；Codex 用累计计数校验每次请求的增量，分叉会话复制的父会话历史不计入，移动过的日志跨文件去重。
+- 扫描结果缓存在 `~/.factory-switch/token-usage/usage-scan-cache-v9.json`：没变的文件不重读，变大的文件从上次位置续读，日志被删除后已统计的用量保留 92 天。首次扫描本机约 900 个日志需要几秒，之后约 0.1 秒。
+- 费用按 LiteLLM 公开价格表估算（缓存 24 小时，下载失败时改走 GitHub API，再失败用磁盘缓存），日志里自带费用的（如 Grok、Pi）优先用自带的。可以给模型设置自定义价格，存在 `~/.factory-switch/token-usage/settings.json`，修改后立即按新价格重新计算。
+
 ### 通知
 
 只看 Standard 池的 5 小时用量，阈值 70%：
@@ -127,3 +137,6 @@ pnpm icon         # 改了 build/icon.svg 后重新生成 build/icon.icns，需�
 - Factory 打开或新建会话时会重新给会话写上组织标记，所以每次切换都会重新去一遍标记。
 - 切换和删除本地凭证会直接结束终端里正在运行的 `droid`，里面进行中的任务会中断。
 - 汇总页假设各账号的每周、每月额度一样大，额度不同的账号直接相加百分比会有偏差。
+- Token 统计只能看到本机现存的日志和本程序扫描过后被删除的日志；本程序开始扫描之前就删掉的日志统计不到，所以可能比 T3 Code 显示的少（T3 也只是缓存了它扫描过的已删日志）。
+- Token 统计的费用是按 API 公开价格估算，不是实际账单；订阅制（Claude Max、ChatGPT Plus 等）实际花费不按这个算。Codex 日志里没写服务档位的请求按标准档计价：T3 会去自己的数据库查它发起的会话用的档位，本程序没有这份记录。
+- Muse 的日志目录 T3 是启动 muse 程序问出来的，本程序不启动它，只读 `MUSE_HOME` 环境变量指定的目录。OpenCode、Antigravity、Cursor 的 token 统计和「额度」页签还没接入。

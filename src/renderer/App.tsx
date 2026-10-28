@@ -8,7 +8,9 @@ import { SignedOutNotice } from "./components/detail/SignedOutNotice";
 import {
   AccountSidebar,
   OVERVIEW_ID,
+  TOKEN_USAGE_ID,
 } from "./components/sidebar/AccountSidebar";
+import { TokenUsagePage } from "./components/token-usage/TokenUsagePage";
 import { UsageLimits } from "./components/usage/UsageLimits";
 import { UsageOverview } from "./components/usage/UsageOverview";
 import { buildAccountViews } from "./lib/accounts";
@@ -96,8 +98,10 @@ export function App() {
 
   const accounts = buildAccountViews(state);
   const showOverview = selectedId === OVERVIEW_ID && accounts.length > 0;
+  // Token 统计只看本机日志，没有账号也能进入
+  const showTokenUsage = selectedId === TOKEN_USAGE_ID;
   // 选中的账号不存在（被删了或还没选）时，默认看当前登录的账号
-  const selected = showOverview
+  const selected = showOverview || showTokenUsage
     ? null
     : (accounts.find((account) => account.id === selectedId) ??
       accounts.find((account) => account.isCurrent) ??
@@ -109,62 +113,68 @@ export function App() {
       <AccountSidebar
         accounts={accounts}
         usage={usage}
-        selectedId={showOverview ? OVERVIEW_ID : (selected?.id ?? null)}
+        selectedId={
+          showTokenUsage ? TOKEN_USAGE_ID : showOverview ? OVERVIEW_ID : (selected?.id ?? null)
+        }
         factoryRunning={state.factoryRunning}
         onSelect={setSelectedId}
         productSwitcher={productSwitcher}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex min-h-0 flex-1 flex-col gap-12 overflow-auto px-10 py-8">
-          {state.current.kind !== "signed-in" && (
-            <SignedOutNotice current={state.current} busy={busy} run={run} />
-          )}
-          {showOverview ? (
-            <UsageOverview
-              accounts={accounts}
-              usage={usage}
-              busy={busy}
-              run={run}
-              onSelect={setSelectedId}
-            />
-          ) : selected ? (
-            <>
-              <AccountHeader
-                key={`header-${selected.id}`}
-                account={selected}
+        {showTokenUsage ? (
+          <TokenUsagePage />
+        ) : (
+          <main className="flex min-h-0 flex-1 flex-col gap-12 overflow-auto px-10 py-8">
+            {state.current.kind !== "signed-in" && (
+              <SignedOutNotice current={state.current} busy={busy} run={run} />
+            )}
+            {showOverview ? (
+              <UsageOverview
+                accounts={accounts}
+                usage={usage}
                 busy={busy}
                 run={run}
+                onSelect={setSelectedId}
               />
-              <UsageLimits
-                key={`usage-${selected.id}`}
-                entry={usage[selected.id]}
-                emptyState={
-                  <p className="text-muted-foreground">
-                    {selected.isCurrent
-                      ? "本地凭证暂时查不到用量。"
-                      : "还没有设置 API Key，无法查询这个账号的用量。在下面设置后显示。"}
-                  </p>
-                }
-              />
-              <ApiKeySection
-                key={`key-${selected.id}`}
-                account={selected}
-                busy={busy}
-                run={run}
-              />
-              <AccountActions
-                key={`actions-${selected.id}`}
-                account={selected}
-                busy={busy}
-                run={run}
-              />
-            </>
-          ) : (
-            <p className="text-muted-foreground">
-              还没有任何账号。在 Factory 里登录后回到这里备份。
-            </p>
-          )}
-        </main>
+            ) : selected ? (
+              <>
+                <AccountHeader
+                  key={`header-${selected.id}`}
+                  account={selected}
+                  busy={busy}
+                  run={run}
+                />
+                <UsageLimits
+                  key={`usage-${selected.id}`}
+                  entry={usage[selected.id]}
+                  emptyState={
+                    <p className="text-muted-foreground">
+                      {selected.isCurrent
+                        ? "本地凭证暂时查不到用量。"
+                        : "还没有设置 API Key，无法查询这个账号的用量。在下面设置后显示。"}
+                    </p>
+                  }
+                />
+                <ApiKeySection
+                  key={`key-${selected.id}`}
+                  account={selected}
+                  busy={busy}
+                  run={run}
+                />
+                <AccountActions
+                  key={`actions-${selected.id}`}
+                  account={selected}
+                  busy={busy}
+                  run={run}
+                />
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                还没有任何账号。在 Factory 里登录后回到这里备份。
+              </p>
+            )}
+          </main>
+        )}
         <ActivityLog lines={lines} busy={busy} />
       </div>
     </div>

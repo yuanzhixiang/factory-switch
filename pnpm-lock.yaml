@@ -17,6 +17,12 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      stream-chain:
+        specifier: 4.2.5
+        version: 4.2.5
+      stream-json:
+        specifier: 3.6.0
+        version: 3.6.0
     devDependencies:
       '@eslint/js':
         specifier: 10.0.1
@@ -2022,6 +2028,13 @@ packages:
 
   std-env@4.3.0:
     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
+
+  stream-chain@4.2.5:
+    resolution: {integrity: sha512-Wtyq3bNE3ggLR0v2vftqvuhltym3WbZAkZpfIrkr5F/6vpeUmWmwTgXa16zD87gpahwJ/Qulq3zVfUlgIc0J2A==}
+    engines: {node: '>=22'}
+
+  stream-json@3.6.0:
+    resolution: {integrity: sha512-NiJdqxKyau579z/E8vfqcjWfSDWxW/AT99javFXdPXF147Z5za85LRXSHEmSX9TKOakB7gaIccfD0fOIctb7KQ==}
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -4274,6 +4287,12 @@ snapshots:
   stat-mode@1.0.0: {}
 
   std-env@4.3.0: {}
+
+  stream-chain@4.2.5: {}
+
+  stream-json@3.6.0:
+    dependencies:
+      stream-chain: 4.2.5
 
   string-width@4.2.3:
     dependencies:

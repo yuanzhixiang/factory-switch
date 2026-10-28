@@ -1,17 +1,21 @@
 import type { ReactNode } from "react";
 import type { UsageMap, UsageSnapshot } from "../../../shared/types";
 import type { AccountView } from "../../lib/accounts";
+import { formatTokens } from "../../lib/token-usage/format";
+import { useTokenUsageTotal } from "../../lib/token-usage/store";
 import { effectivePercent, summarizePeriod, usageLevel } from "../../lib/usage";
 import { useNow } from "../../lib/useNow";
 import { LEVEL_TEXT } from "../usage/UsageParts";
 
 /** 侧边栏里代表「全部账号汇总」的选中值 */
 export const OVERVIEW_ID = "overview";
+/** 侧边栏里代表「Token 统计」页的选中值 */
+export const TOKEN_USAGE_ID = "token-usage";
 
 const ROW =
   "flex h-8 items-center gap-2 rounded-[2px] px-2 text-left text-[13px] transition-colors";
 
-/** 左侧导航：顶部是全部账号汇总（月度），下面列出各账号的 5 小时使用率，点击切换右侧详情 */
+/** 左侧导航：顶部是全部账号汇总（月度）和本机 Token 统计，下面列出各账号的 5 小时使用率，点击切换右侧详情 */
 export function AccountSidebar({
   accounts,
   usage,
@@ -60,6 +64,10 @@ export function AccountSidebar({
           <span className="min-w-0 flex-1 truncate">全部账号</span>
           <UsagePercent percent={monthly?.percent ?? null} />
         </button>
+        <TokenUsageRow
+          selected={selectedId === TOKEN_USAGE_ID}
+          onSelect={() => onSelect(TOKEN_USAGE_ID)}
+        />
 
         <p className="px-2 pt-5 pb-1 font-mono text-[11px] tracking-[0.04em] text-muted-foreground">
           ACCOUNTS
@@ -108,5 +116,26 @@ function UsagePercent({ percent }: { percent: number | null }) {
     >
       {percent === null ? "—" : `${percent}%`}
     </span>
+  );
+}
+
+/** 「Token 统计」入口，右边显示用量页所选时间段的总 token */
+function TokenUsageRow({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
+  const { totalTokens, loading } = useTokenUsageTotal();
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? "page" : undefined}
+      className={`${ROW} ${selected ? "bg-muted" : "hover:bg-muted"}`}
+    >
+      <span className="w-1.5 shrink-0 text-center text-[11px] text-muted-foreground" aria-hidden>
+        ≡
+      </span>
+      <span className="min-w-0 flex-1 truncate">Token 统计</span>
+      <span className="text-[11px] text-muted-foreground tabular-nums">
+        {totalTokens === null ? (loading ? "…" : "—") : formatTokens(totalTokens)}
+      </span>
+    </button>
   );
 }

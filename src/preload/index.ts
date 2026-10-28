@@ -24,6 +24,11 @@ const api: FactorySwitchApi = {
   clearApiKey: (accountId) => ipcRenderer.invoke("clear-api-key", accountId),
   getUsage: () => ipcRenderer.invoke("get-usage"),
   refreshUsage: () => ipcRenderer.invoke("refresh-usage"),
+  getTokenUsage: (input) => ipcRenderer.invoke("get-token-usage", input),
+  refreshTokenUsageRates: () => ipcRenderer.invoke("refresh-token-usage-rates"),
+  getTokenUsageSettings: () => ipcRenderer.invoke("get-token-usage-settings"),
+  updateTokenUsageSettings: (patch) =>
+    ipcRenderer.invoke("update-token-usage-settings", patch),
   onProgress: (listener) => subscribe("progress", listener),
   onUsage: (listener) => subscribe("usage", listener),
   onSelectAccount: (listener) => subscribe("select-account", listener),

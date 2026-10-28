@@ -1,0 +1,314 @@
+// 把用量记录按「天/小时 × 提供方 × 模型 × 来源目录」聚合成 bucket，移植自 T3 Code（MIT）apps/server/src/usage/usageAggregation.ts
+import type {
+  UsageBucket,
+  UsageCategoryCost,
+  UsageResolution,
+  UsageTokenTotals,
+} from "../../shared/token-usage";
+import { cacheSavingsUsd, priceUsage, type RateTable } from "./pricing";
+import { EMPTY_TOTALS, type UsageRecord } from "./types";
+
+// en-CA 在指定时区下输出 ISO 顺序的日期；Date 的 getter 只认本机时区
+function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  } catch {
+    format = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }
+  // 按 15 分钟槽缓存，避免每条记录都调 Intl；跨午夜的槽要逐条精确格式化
+  const days = new Map<number, string | null>();
+  return (timestampMs) => {
+    const slot = Math.floor(timestampMs / QUARTER_HOUR_MS);
+    let day = days.get(slot);
+    if (day === undefined) {
+      const first = format.format(new Date(slot * QUARTER_HOUR_MS));
+      const last = format.format(new Date((slot + 1) * QUARTER_HOUR_MS - 1));
+      day = first === last ? first : null;
+      days.set(slot, day);
+    }
+    return day ?? format.format(new Date(timestampMs));
+  };
+}
+
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+interface MutableBucket {
+  totals: { -readonly [K in keyof UsageTokenTotals]: number };
+  costUsd: number;
+  cacheSavingsUsd: number;
+  categoryCostUsd: UsageCategoryCost | null;
+  fastCostUsd: number;
+  ultrafastCostUsd: number;
+  speedPremiumUsd: number;
+  records: number;
+  unpricedRecords: number;
+  providerReportedRecords: number;
+  sessions: Set<string>;
+}
+
+export interface AggregateOptions {
+  readonly timeZone: string;
+  readonly sinceDay: string;
+  readonly untilDay: string;
+  readonly rates: RateTable;
+  readonly priceOverrides?: RateTable;
+  readonly modelAliases?: ReadonlyMap<string, string>;
+  readonly resolution?: UsageResolution;
+  readonly sinceTimeMs?: number;
+  readonly untilTimeMs?: number;
+}
+
+export function resolveModelAliases(
+  aliases: Readonly<Record<string, string>>,
+): ReadonlyMap<string, string> {
+  const resolved = new Map<string, string>();
+  for (const model of Object.keys(aliases)) {
+    const seen = new Set([model]);
+    let target = aliases[model]!;
+    while (Object.hasOwn(aliases, target) && !seen.has(target)) {
+      seen.add(target);
+      target = aliases[target]!;
+    }
+    if (!Object.hasOwn(aliases, target)) resolved.set(model, target);
+  }
+  return resolved;
+}
+
+export interface AggregateResult {
+  readonly buckets: readonly UsageBucket[];
+  readonly duplicatesDropped: number;
+  readonly outOfWindow: number;
+}
+
+/** 在整次扫描范围内去重：Claude 会把记录复制进恢复或分叉出来的日志 */
+export class UsageAggregator {
+  readonly #buckets = new Map<string, MutableBucket>();
+  readonly #seen = new Set<string>();
+  readonly #toDay: (timestampMs: number) => string;
+  readonly #hourlyWindow: { readonly sinceTimeMs: number; readonly untilTimeMs: number } | null;
+  readonly #options: AggregateOptions;
+  #lastBucket: {
+    readonly day: string;
+    readonly hourIndex: number;
+    readonly provider: string;
+    readonly model: string;
+    readonly source: string;
+    readonly bucket: MutableBucket;
+  } | null = null;
+  #duplicatesDropped = 0;
+  #outOfWindow = 0;
+
+  constructor(options: AggregateOptions) {
+    this.#options = options;
+    this.#toDay = makeDayFormatter(options.timeZone);
+    if (options.resolution === "hour") {
+      if (options.sinceTimeMs === undefined || options.untilTimeMs === undefined) {
+        throw new Error("Hourly usage aggregation requires exact time bounds");
+      }
+      this.#hourlyWindow = {
+        sinceTimeMs: options.sinceTimeMs,
+        untilTimeMs: options.untilTimeMs,
+      };
+    } else {
+      this.#hourlyWindow = null;
+    }
+  }
+
+  add(input: UsageRecord, sourcePath?: string): boolean {
+    const record = this.#mapModel(input);
+    if (record.dedupeKey !== null) {
+      if (this.#seen.has(record.dedupeKey)) {
+        this.#duplicatesDropped += 1;
+        return false;
+      }
+      this.#seen.add(record.dedupeKey);
+    }
+
+    if (
+      this.#hourlyWindow !== null &&
+      (record.timestampMs < this.#hourlyWindow.sinceTimeMs ||
+        record.timestampMs >= this.#hourlyWindow.untilTimeMs)
+    ) {
+      this.#outOfWindow += 1;
+      return false;
+    }
+
+    const day = this.#toDay(record.timestampMs);
+    if (
+      this.#hourlyWindow === null &&
+      (day < this.#options.sinceDay || day > this.#options.untilDay)
+    ) {
+      this.#outOfWindow += 1;
+      return false;
+    }
+
+    const hourIndex =
+      this.#hourlyWindow === null
+        ? -1
+        : Math.floor((record.timestampMs - this.#hourlyWindow.sinceTimeMs) / HOUR_MS);
+    const bucket = this.#bucketFor(day, hourIndex, record.provider, record.model, sourcePath ?? "");
+
+    const priced = priceUsage(this.#options.rates, record, this.#options.priceOverrides);
+
+    const totals = bucket.totals;
+    totals.uncachedInputTokens += record.totals.uncachedInputTokens;
+    totals.cachedInputTokens += record.totals.cachedInputTokens;
+    totals.cacheCreationTokens += record.totals.cacheCreationTokens;
+    totals.outputTokens += record.totals.outputTokens;
+    totals.reasoningTokens += record.totals.reasoningTokens;
+    bucket.costUsd += priced.costUsd;
+    if (priced.categoryCostUsd !== null) {
+      const sum = bucket.categoryCostUsd;
+      const add = priced.categoryCostUsd;
+      bucket.categoryCostUsd =
+        sum === null
+          ? add
+          : {
+              input: sum.input + add.input,
+              cacheRead: sum.cacheRead + add.cacheRead,
+              cacheWrite: sum.cacheWrite + add.cacheWrite,
+              output: sum.output + add.output,
+            };
+    }
+    if (record.speed === "fast") bucket.fastCostUsd += priced.costUsd;
+    if (record.speed === "ultrafast") bucket.ultrafastCostUsd += priced.costUsd;
+    bucket.speedPremiumUsd += priced.speedPremiumUsd;
+    bucket.cacheSavingsUsd += cacheSavingsUsd(
+      this.#options.rates,
+      record,
+      this.#options.priceOverrides,
+    );
+    bucket.records += 1;
+    if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
+    if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
+    if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
+    return true;
+  }
+
+  // 别名使用目标模型的价格，替换提供方特有的 rateModel
+  #mapModel(record: UsageRecord): UsageRecord {
+    const model = this.#options.modelAliases?.get(record.model);
+    if (model === undefined) return record;
+    const mapped: { -readonly [K in keyof UsageRecord]: UsageRecord[K] } = { ...record, model };
+    delete mapped.rateModel;
+    return mapped;
+  }
+
+  // 按时间排列的记录通常落在上一个 bucket，省掉重建 key
+  #bucketFor(
+    day: string,
+    hourIndex: number,
+    provider: string,
+    model: string,
+    source: string,
+  ): MutableBucket {
+    const last = this.#lastBucket;
+    if (
+      last !== null &&
+      last.day === day &&
+      last.hourIndex === hourIndex &&
+      last.provider === provider &&
+      last.model === model &&
+      last.source === source
+    ) {
+      return last.bucket;
+    }
+    const window = this.#hourlyWindow;
+    const hourStart =
+      window === null ? "" : new Date(window.sinceTimeMs + hourIndex * HOUR_MS).toISOString();
+    const key = `${day}\u0000${hourStart}\u0000${provider}\u0000${model}\u0000${source}`;
+    let bucket = this.#buckets.get(key);
+    if (bucket === undefined) {
+      bucket = {
+        totals: { ...EMPTY_TOTALS },
+        costUsd: 0,
+        cacheSavingsUsd: 0,
+        categoryCostUsd: null,
+        fastCostUsd: 0,
+        ultrafastCostUsd: 0,
+        speedPremiumUsd: 0,
+        records: 0,
+        unpricedRecords: 0,
+        providerReportedRecords: 0,
+        sessions: new Set<string>(),
+      };
+      this.#buckets.set(key, bucket);
+    }
+    this.#lastBucket = { day, hourIndex, provider, model, source, bucket };
+    return bucket;
+  }
+
+  finish(): AggregateResult {
+    const buckets: UsageBucket[] = [];
+    for (const [key, bucket] of this.#buckets) {
+      const [day = "", hourStart = "", provider = "", model = "", sourcePath = ""] =
+        key.split("\u0000");
+      const category = bucket.categoryCostUsd;
+      const fastCostUsd = roundUsd(bucket.fastCostUsd);
+      const ultrafastCostUsd = roundUsd(bucket.ultrafastCostUsd);
+      const speedPremiumUsd = roundUsd(bucket.speedPremiumUsd);
+      buckets.push({
+        day,
+        ...(hourStart === "" ? {} : { hourStart }),
+        provider: provider as UsageBucket["provider"],
+        model,
+        ...(sourcePath === "" ? {} : { sourcePath }),
+        totals: { ...bucket.totals },
+        costUsd: bucket.costUsd,
+        cacheSavingsUsd: bucket.cacheSavingsUsd,
+        ...(category === null
+          ? {}
+          : {
+              categoryCostUsd: {
+                input: roundUsd(category.input),
+                cacheRead: roundUsd(category.cacheRead),
+                cacheWrite: roundUsd(category.cacheWrite),
+                output: roundUsd(category.output),
+              },
+            }),
+        ...(fastCostUsd === 0 ? {} : { fastCostUsd }),
+        ...(ultrafastCostUsd === 0 ? {} : { ultrafastCostUsd }),
+        ...(speedPremiumUsd === 0 ? {} : { speedPremiumUsd }),
+        costSource: resolveCostSource(bucket),
+        records: bucket.records,
+        unpricedRecords: bucket.unpricedRecords,
+        sessions: bucket.sessions.size,
+      });
+    }
+    buckets.sort(
+      (a, b) =>
+        a.day.localeCompare(b.day) ||
+        (a.hourStart ?? "").localeCompare(b.hourStart ?? "") ||
+        a.provider.localeCompare(b.provider) ||
+        a.model.localeCompare(b.model),
+    );
+
+    return {
+      buckets,
+      duplicatesDropped: this.#duplicatesDropped,
+      outOfWindow: this.#outOfWindow,
+    };
+  }
+}
+
+function roundUsd(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
+}
+
+function resolveCostSource(bucket: MutableBucket): UsageBucket["costSource"] {
+  if (bucket.unpricedRecords === bucket.records) return "unpriced";
+  if (bucket.providerReportedRecords === bucket.records) return "providerReported";
+  return "modelPriced";
+}

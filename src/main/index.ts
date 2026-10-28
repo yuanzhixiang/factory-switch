@@ -14,6 +14,7 @@ import { setApiKey } from "../core/usage";
 import { deleteApiKey, removeAccount, renameAccount } from "../core/vault";
 import type { OperationResult } from "../shared/types";
 import { createUsageMonitor } from "./usage-monitor";
+import { createTokenUsage } from "./token-usage";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -39,6 +40,8 @@ const monitor = createUsageMonitor({
     notification.show();
   },
 });
+
+const tokenUsage = createTokenUsage(env.vaultDir);
 
 /** 串行执行一个操作，统一转成界面能展示的结果；成功后顺手刷新用量 */
 async function runOperation(
@@ -107,6 +110,7 @@ function registerIpc(): void {
   );
   ipcMain.handle("get-usage", () => monitor.get());
   ipcMain.handle("refresh-usage", () => monitor.refresh());
+  tokenUsage.register(ipcMain);
 }
 
 /** 创建主窗口；开发时加载 Vite dev server，打包后加载构建产物 */

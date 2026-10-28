@@ -1,3 +1,11 @@
+import type {
+  TokenUsageResult,
+  TokenUsageSettings,
+  TokenUsageSettingsPatch,
+  UsagePricing,
+  UsageSummaryInput,
+} from "./token-usage";
+
 /** 从凭证里读出的账号身份，只含展示和比对用的信息，不含任何 token */
 export interface AccountIdentity {
   userId: string;
@@ -101,6 +109,12 @@ export interface FactorySwitchApi {
   clearApiKey(accountId: string): Promise<OperationResult>;
   getUsage(): Promise<UsageMap>;
   refreshUsage(): Promise<UsageMap>;
+  /** 扫描本地各家 CLI 日志，返回 token 统计 */
+  getTokenUsage(input: UsageSummaryInput): Promise<TokenUsageResult>;
+  /** 强制重新下载 LiteLLM 价格表 */
+  refreshTokenUsageRates(): Promise<UsagePricing>;
+  getTokenUsageSettings(): Promise<TokenUsageSettings>;
+  updateTokenUsageSettings(patch: TokenUsageSettingsPatch): Promise<TokenUsageSettings>;
   onProgress(listener: (message: string) => void): () => void;
   onUsage(listener: (usage: UsageMap) => void): () => void;
   /** 点击系统通知时，主进程要求页面选中某个账号 */
