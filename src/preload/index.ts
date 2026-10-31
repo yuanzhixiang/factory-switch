@@ -22,6 +22,7 @@ const api: FactorySwitchApi = {
   setApiKey: (accountId, apiKey) =>
     ipcRenderer.invoke("set-api-key", accountId, apiKey),
   clearApiKey: (accountId) => ipcRenderer.invoke("clear-api-key", accountId),
+  copyApiKey: (accountId) => ipcRenderer.invoke("copy-api-key", accountId),
   getUsage: () => ipcRenderer.invoke("get-usage"),
   refreshUsage: () => ipcRenderer.invoke("refresh-usage"),
   getTokenUsage: (input) => ipcRenderer.invoke("get-token-usage", input),

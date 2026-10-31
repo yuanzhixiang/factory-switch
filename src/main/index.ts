@@ -1,7 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 import { readCursorCurrent } from "../core/cursor-current";
-import { app, BrowserWindow, ipcMain, Notification, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, Notification, shell } from "electron";
 import { createDefaultEnv } from "../core/env";
 import {
   backupCurrent,
@@ -11,7 +11,7 @@ import {
   switchTo,
 } from "../core/operations";
 import { setApiKey } from "../core/usage";
-import { deleteApiKey, removeAccount, renameAccount } from "../core/vault";
+import { deleteApiKey, readApiKey, removeAccount, renameAccount } from "../core/vault";
 import type { OperationResult } from "../shared/types";
 import { createUsageMonitor } from "./usage-monitor";
 import { createTokenUsage } from "./token-usage";
@@ -114,6 +114,13 @@ function registerIpc(): void {
       return "API Key 已删除";
     }),
   );
+  // 完整 Key 只在主进程里读出并写进剪贴板，不传给页面
+  ipcMain.handle("copy-api-key", async (_event, accountId: string) => {
+    const key = await readApiKey(env, accountId);
+    if (!key) return false;
+    clipboard.writeText(key);
+    return true;
+  });
   ipcMain.handle("get-usage", () => monitor.get());
   ipcMain.handle("refresh-usage", () => monitor.refresh());
   tokenUsage.register(ipcMain);

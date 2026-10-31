@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Run } from "../../lib/run";
 import type { AccountView } from "../../lib/accounts";
 import { Button } from "../shared/Button";
@@ -7,7 +7,7 @@ import { Modal } from "../shared/Modal";
 import { Section } from "../shared/Section";
 import { TextInput } from "../shared/TextInput";
 
-/** API Key 区块：显示 Key 末四位，可设置、修改、删除 */
+/** API Key 区块：显示 Key 末四位，可复制、设置、修改、删除 */
 export function ApiKeySection({
   account,
   busy,
@@ -19,6 +19,16 @@ export function ApiKeySection({
 }) {
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+
+  // 「已复制」提示显示一会儿后恢复
+  useEffect(() => {
+    if (copyStatus === "idle") return;
+    const timer = setTimeout(() => setCopyStatus("idle"), 1500);
+    return () => clearTimeout(timer);
+  }, [copyStatus]);
 
   return (
     <Section title="API Key">
@@ -34,6 +44,20 @@ export function ApiKeySection({
       ) : account.apiKeyHint ? (
         <div className="flex items-center gap-3">
           <span className="font-mono">fk-…{account.apiKeyHint}</span>
+          <Button
+            onClick={() =>
+              void window.factorySwitch
+                .copyApiKey(account.id)
+                .then((ok) => setCopyStatus(ok ? "copied" : "failed"))
+                .catch(() => setCopyStatus("failed"))
+            }
+          >
+            {copyStatus === "copied"
+              ? "已复制"
+              : copyStatus === "failed"
+                ? "复制失败"
+                : "复制"}
+          </Button>
           <Button disabled={busy} onClick={() => setEditing(true)}>
             修改
           </Button>

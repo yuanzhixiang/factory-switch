@@ -114,6 +114,8 @@ export interface FactorySwitchApi {
   removeAccount(accountId: string): Promise<OperationResult>;
   setApiKey(accountId: string, apiKey: string): Promise<OperationResult>;
   clearApiKey(accountId: string): Promise<OperationResult>;
+  /** 把完整 API Key 写进剪贴板；没有保存 Key 时返回 false */
+  copyApiKey(accountId: string): Promise<boolean>;
   getUsage(): Promise<UsageMap>;
   refreshUsage(): Promise<UsageMap>;
   /** 扫描本地各家 CLI 日志，返回 token 统计 */
